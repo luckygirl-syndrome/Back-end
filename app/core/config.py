@@ -1,11 +1,7 @@
 import os
 import pathlib
-from fastapi import Path
-from sqlalchemy import create_engine
-from sqlalchemy.ext.declarative import declarative_base
-from pydantic_settings import BaseSettings, SettingsConfigDict   
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from dotenv import load_dotenv
-import certifi
 
 # 현재 파일 위치 기준으로 .env 파일 경로 찾기
 # ✅ pathlib.Path로 이름을 명확하게 써줍니다.
@@ -29,27 +25,10 @@ class Settings(BaseSettings):
 
     @property
     def db_engine_kwargs(self):
-        kwargs = {
+        return {
             "pool_pre_ping": True,
             "pool_recycle": 3600,
-            "connect_args": {}
         }
-        
-        # 1. 우선 가장 안전한 certifi 경로를 기본값으로 설정
-        ca_path = certifi.where()
-        
-        # 2. 서버 환경용 경로 설정 (파일이 실제로 존재할 때만 교체)
-        prod_ca_path = "/etc/ssl/certs/ca-certificates.crt"
-        if os.path.exists(prod_ca_path):
-            ca_path = prod_ca_path
-            
-        # 3. 최종 결정된 경로로 SSL 설정
-        kwargs["connect_args"]["ssl"] = {"ca": ca_path}
-        
-        # 디버깅용: 현재 실제로 어떤 경로를 쓰는지 터미널에 찍어줍니다.
-        print(f"DEBUG: 최종 SSL CA 경로 -> {ca_path}")
-        
-        return kwargs
 
     model_config = SettingsConfigDict(
         env_file=".env", 

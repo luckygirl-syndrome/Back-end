@@ -81,6 +81,9 @@ def normalize_item_schema(item: dict) -> dict:
     x["is_direct_shipping"] = _safe_float(x.get("is_direct_shipping", 0.0), 0.0)
     return x
 
+def _binarize_is_direct_shipping(v):
+    return float(_safe_float(v, 0.0) >= 1.0)
+
 def format_actual_value(feat_name, actual_val):
     # 쇼핑몰/배송 정보 한글 매핑
     FEATURE_KO = {
@@ -304,8 +307,8 @@ def preprocess_df_for_personal(df_in: pd.DataFrame,
     for c in BINARY_COLS:
         dfp[c] = (dfp[c].astype(float) >= 0.5).astype(float)
 
-    # ordinal
-    dfp["is_direct_shipping"] = dfp["is_direct_shipping"].astype(float)
+    # is_direct_shipping 이진화 (1, 2 -> 1)
+    dfp["is_direct_shipping"] = dfp["is_direct_shipping"].apply(_binarize_is_direct_shipping).astype(float)
 
     dfp = dfp.fillna(0.0).astype(float)
 

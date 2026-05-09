@@ -14,11 +14,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-# torch 제외 먼저 설치 후, torch만 CUDA 휠로 설치 (pip이 CPU 휠로 덮어쓰지 않도록)
+# [GPU 임시 비활성화] LLM 전환 전까지 CPU 버전으로 실행
+# 원래 CUDA 설치 명령어 (GPU 인스턴스로 전환 시 아래 주석 해제 후 그 아래 CPU 설치 주석처리)
+# RUN pip install --upgrade pip && \
+#     grep -v "^torch==" requirements.txt > /tmp/req_no_torch.txt && \
+#     pip install -r /tmp/req_no_torch.txt && \
+#     pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
 RUN pip install --upgrade pip && \
     grep -v "^torch==" requirements.txt > /tmp/req_no_torch.txt && \
     pip install -r /tmp/req_no_torch.txt && \
-    pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+    pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cpu
 
 COPY . .
 

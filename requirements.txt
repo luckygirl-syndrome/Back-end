@@ -19,9 +19,6 @@ safetensors==0.7.0
 
 # --- [Scraping & Data] ---
 beautifulsoup4==4.14.3
-selenium==4.40.0
-selenium-wire==5.1.0
-blinker==1.5.0
 
 # --- [DB & Infrastructure] ---
 SQLAlchemy==2.0.46

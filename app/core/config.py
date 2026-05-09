@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
+    SENTRY_DSN: str = ""
 
     @property
     def db_engine_kwargs(self):

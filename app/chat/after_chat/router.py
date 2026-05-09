@@ -7,6 +7,7 @@ from app.users.router import get_current_user
 
 from app.chat.after_chat import schemas
 from app.chat.after_chat import service
+from app.core.observability import posthog_client
 
 router = APIRouter(prefix="/api/chat/after", tags=["After Chat"])
 
@@ -22,7 +23,18 @@ def update_purchase(
     """
     try:
         user_id = current_user.user_id
-        return service.update_purchase_status(db, user_id, request)
+        result = service.update_purchase_status(db, user_id, request)
+        if posthog_client:
+            decision = "purchased" if request.is_purchased else ("abandoned" if request.is_abandoned else "undecided")
+            posthog_client.capture(
+                distinct_id=str(user_id),
+                event="purchase_decision_made",
+                properties={
+                    "user_product_id": request.user_product_id,
+                    "decision": decision,
+                },
+            )
+        return result
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:
@@ -44,7 +56,18 @@ def submit_feedback(
     """
     try:
         user_id = current_user.user_id
-        return service.submit_feedback(db, user_id, request)
+        result = service.submit_feedback(db, user_id, request)
+        if posthog_client:
+            posthog_client.capture(
+                distinct_id=str(user_id),
+                event="feedback_submitted",
+                properties={
+                    "user_product_id": request.user_product_id,
+                    "rating": request.rating,
+                    "has_text": bool(request.feedback_text),
+                },
+            )
+        return result
     except ValueError as ve:
         raise HTTPException(status_code=404, detail=str(ve))
     except Exception as e:

@@ -10,6 +10,8 @@ import json
 from app.core.security import create_access_token, decode_access_token, hash_password, verify_password
 from google.oauth2 import id_token as google_id_token
 from google.auth.transport import requests as google_requests
+import httpx
+from jose import jwt as jose_jwt
 from app.products.models import UserProduct, Product
 from sqlalchemy import func
 from app.core.observability import posthog_client
@@ -22,9 +24,9 @@ def get_current_user(token: str = Depends(api_key_header), db: Session = Depends
     payload = decode_access_token(token)
     if not payload:
         raise HTTPException(status_code=401, detail="인증 실패")
-    
-    email = payload.get("sub")
-    user = db.query(models.User).filter(models.User.email == email).first()
+
+    user_id = payload.get("sub")
+    user = db.query(models.User).filter(models.User.user_id == int(user_id)).first()
     if not user:
         raise HTTPException(status_code=401, detail="유저 없음")
     return user
@@ -63,7 +65,7 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=401, detail="로그인 정보가 올바르지 않습니다.")
     
-    access_token = create_access_token(data={"sub": user.email})
+    access_token = create_access_token(data={"sub": str(user.user_id)})
     if posthog_client:
         posthog_client.capture(
             distinct_id=str(user.user_id),
@@ -118,7 +120,7 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
                 properties={"provider": "google", "has_nickname": bool(user.nickname)},
             )
 
-    access_token = create_access_token(data={"sub": user.email})
+    access_token = create_access_token(data={"sub": str(user.user_id)})
     if posthog_client:
         posthog_client.capture(
             distinct_id=str(user.user_id),
@@ -127,7 +129,117 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
         )
     return {"status": "success", "access_token": access_token, "token_type": "bearer", "is_new_user": is_new_user}
 
-# 4. 내 프로필 조회
+# 4. 카카오 로그인
+@router.post("/auth/kakao")
+def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
+    try:
+        jwks_response = httpx.get("https://kauth.kakao.com/.well-known/jwks.json")
+        jwks = jwks_response.json()
+
+        header = jose_jwt.get_unverified_header(body.id_token)
+        kid = header.get("kid")
+
+        public_key = next((k for k in jwks["keys"] if k["kid"] == kid), None)
+        if not public_key:
+            raise HTTPException(status_code=401, detail="유효하지 않은 카카오 토큰입니다.")
+
+        payload = jose_jwt.decode(
+            body.id_token,
+            public_key,
+            algorithms=["RS256"],
+            audience=settings.KAKAO_REST_API_KEY,
+        )
+    except JWTError:
+        raise HTTPException(status_code=401, detail="유효하지 않은 카카오 토큰입니다.")
+
+    kakao_sub = payload.get("sub")
+    nickname = payload.get("nickname", "")
+    picture = payload.get("picture", "")
+
+    if not kakao_sub:
+        raise HTTPException(status_code=400, detail="카카오 토큰에서 유저 정보를 가져올 수 없습니다.")
+
+    existing_user = db.query(models.User).filter(
+        models.User.social_id == kakao_sub,
+        models.User.social_provider == "kakao"
+    ).first()
+
+    if existing_user:
+        user = existing_user
+        is_new_user = False
+    else:
+        user = models.User(
+            email=None,
+            password=None,
+            nickname=nickname,
+            profile_img=picture,
+            social_provider="kakao",
+            social_id=kakao_sub,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        is_new_user = True
+        if posthog_client:
+            posthog_client.capture(
+                distinct_id=str(user.user_id),
+                event="user_signed_up",
+                properties={"provider": "kakao", "has_nickname": bool(user.nickname)},
+            )
+
+    access_token = create_access_token(data={"sub": str(user.user_id)})
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(user.user_id),
+            event="user_logged_in",
+            properties={"provider": "kakao"},
+        )
+    return {"status": "success", "access_token": access_token, "token_type": "bearer", "is_new_user": is_new_user}
+
+# 5. 카카오 계정 연결 (기존 로그인 유저)
+@router.post("/auth/kakao/connect")
+def kakao_connect(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if current_user.social_provider == "kakao":
+        raise HTTPException(status_code=400, detail="이미 카카오 계정이 연결되어 있습니다.")
+
+    try:
+        jwks_response = httpx.get("https://kauth.kakao.com/.well-known/jwks.json")
+        jwks = jwks_response.json()
+
+        header = jose_jwt.get_unverified_header(body.id_token)
+        kid = header.get("kid")
+
+        public_key = next((k for k in jwks["keys"] if k["kid"] == kid), None)
+        if not public_key:
+            raise HTTPException(status_code=401, detail="유효하지 않은 카카오 토큰입니다.")
+
+        payload = jose_jwt.decode(
+            body.id_token,
+            public_key,
+            algorithms=["RS256"],
+            audience=settings.KAKAO_REST_API_KEY,
+        )
+    except JWTError:
+        raise HTTPException(status_code=401, detail="유효하지 않은 카카오 토큰입니다.")
+
+    kakao_sub = payload.get("sub")
+    if not kakao_sub:
+        raise HTTPException(status_code=400, detail="카카오 토큰에서 유저 정보를 가져올 수 없습니다.")
+
+    already_linked = db.query(models.User).filter(
+        models.User.social_id == kakao_sub,
+        models.User.social_provider == "kakao"
+    ).first()
+    if already_linked:
+        raise HTTPException(status_code=400, detail="이미 다른 계정에 연결된 카카오 계정입니다.")
+
+    current_user.social_provider = "kakao"
+    current_user.social_id = kakao_sub
+    db.commit()
+
+    return {"status": "success", "message": "카카오 계정이 연결되었습니다."}
+
+# 6. 내 프로필 조회
 @router.get("/profile", response_model=schemas.ProfileRead)
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
     profile_data = {

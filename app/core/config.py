@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     GOOGLE_CLIENT_ID: str = ""
+    KAKAO_REST_API_KEY: str = ""
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     SENTRY_DSN: str = ""

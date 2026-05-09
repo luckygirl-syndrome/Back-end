@@ -39,8 +39,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      selenium:
-        condition: service_started
+      # selenium:          # LLM 전환으로 비활성화
+      #   condition: service_started
     # [GPU 임시 비활성화] GPU 인스턴스로 전환 시 아래 주석 해제
     # deploy:
     #   resources:
@@ -59,15 +59,15 @@ services:
     networks:
       - ttobaba-network
 
-  selenium:
-    image: selenium/standalone-chrome:latest
-    container_name: ttobaba-selenium
-    shm_size: 2gb
-    ports:
-      - "4444:4444"
-    networks:
-      - ttobaba-network
-    restart: unless-stopped
+  # selenium:              # LLM 전환으로 비활성화 (Playwright로 대체)
+  #   image: selenium/standalone-chrome:latest
+  #   container_name: ttobaba-selenium
+  #   shm_size: 2gb
+  #   ports:
+  #     - "4444:4444"
+  #   networks:
+  #     - ttobaba-network
+  #   restart: unless-stopped
 
   redis:
     image: redis:7.2-alpine

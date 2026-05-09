@@ -39,7 +39,7 @@ from app.chat.models import Chat
 from app.chat.schemas import ChatListItem   
 from app.users.models import User
 from app.products.models import Product, UserProduct
-from app.products.parsers.item_parser import extract_features_from_url
+from app.products.parsers.item_parser import extract_features_from_image
 from app.chat.logic.impulse_calculator import analyze_product_risk, RISK_LEVELS
 from app.chat.logic.final_prefer import infer_all
 from app.chat.logic.impulse_calculator import analyze_product_risk
@@ -145,13 +145,13 @@ def clean_persona_code(user):
     return code
 
 
-def parse_and_save_product(db: Session, url: str, user: User, user_product_id: int = None):
-    """Background Task: URL 파싱 → 분석 → DB 저장 → Redis 캐시."""
+def parse_and_save_product(db: Session, image_bytes: bytes, user: User, user_product_id: int = None, url: str = ""):
+    """Background Task: 스크린샷 분석 → DB 저장 → Redis 캐시."""
     try:
         user_persona_code = clean_persona_code(user)
         model_ready_code = f"{user_persona_code[0]}-{user_persona_code[1]}-{user_persona_code[2]}"
 
-        result = extract_features_from_url(url)
+        result = extract_features_from_image(image_bytes)
         if not result or result.get("product_name") == "Error":
             return None
 

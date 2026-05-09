@@ -1,36 +1,33 @@
-from sqlalchemy import Column, String, DateTime, Integer, Float, Text, TIMESTAMP
-from sqlalchemy.dialects.mysql import BIGINT, TINYINT # ✅ MySQL 전용 타입은 여기서!
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy import Column, String, DateTime, Integer, Float, Text, BigInteger, Boolean
+from sqlalchemy.dialects.postgresql import JSONB
 import datetime
 
-# 만약 이미 공통 Base가 있다면 그걸 쓰시고, 없다면 여기서 정의합니다.
 from app.core.database import Base
 
 class Product(Base):
     __tablename__ = "products"
 
-    product_img = Column(Text)       # 상품 메인 이미지
-    product_id = Column(BIGINT, primary_key=True, index=True)
+    product_id = Column(BigInteger, primary_key=True, index=True)
     product_name = Column(String(255))
     category = Column(String(50))
     price = Column(Integer)
     discount_rate = Column(Float)
-    is_direct_shipping = Column(TINYINT(1))
-    free_shipping = Column(TINYINT(1))
+    is_direct_shipping = Column(Boolean)
+    free_shipping = Column(Boolean)
     review_count = Column(Integer)
     review_score = Column(Float)
     product_likes = Column(String(255))
     platform = Column(String(50))
     product_img = Column(Text)
-    product_url = Column(String(2048), nullable=True)  # 쇼핑몰 상품 링크 (채팅방 상단 shop 아이콘용)
+    product_url = Column(String(2048), nullable=True)
 
-    # ✅ AI 분석용 심리 축 6개
-    sim_temptation = Column(TINYINT(1))
-    sim_trend_hype = Column(TINYINT(1))
-    sim_fit_anxiety = Column(TINYINT(1))
-    sim_quality_logic = Column(TINYINT(1))
-    sim_bundle = Column(TINYINT(1))
-    sim_confidence = Column(TINYINT(1))
+    # AI 분석용 심리 축 6개
+    sim_temptation = Column(Boolean)
+    sim_trend_hype = Column(Boolean)
+    sim_fit_anxiety = Column(Boolean)
+    sim_quality_logic = Column(Boolean)
+    sim_bundle = Column(Boolean)
+    sim_confidence = Column(Boolean)
     
     created_at = Column(DateTime, default=datetime.datetime.now)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)
@@ -38,9 +35,9 @@ class Product(Base):
 class UserProduct(Base):
     __tablename__ = "user_product"
 
-    user_product_id = Column(BIGINT, primary_key=True, index=True, autoincrement=True)
-    user_id = Column(BIGINT, nullable=False)
-    product_id = Column(BIGINT, nullable=False)
+    user_product_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False)
+    product_id = Column(BigInteger, nullable=False)
     requested_at = Column(DateTime, default=datetime.datetime.now)
     completed_at = Column(DateTime)
     duration_ms = Column(Integer)
@@ -49,9 +46,8 @@ class UserProduct(Base):
     impulse_score = Column(Integer)
     final_score = Column(Integer)
     preference_score = Column(Integer, default=50)
-    is_purchased = Column(TINYINT(1))
-    prompt_data = Column(Text)  # ✅ 챗봇에게 넘길 최종 완전체 JSON 캐싱
-    # ✅ 2주 후 피드백 결과 저장용 컬럼
+    is_purchased = Column(Boolean)
+    prompt_data = Column(JSONB)
     feedback_text = Column(Text)
     feedback_rating = Column(Integer)
     created_at = Column(DateTime, default=datetime.datetime.now)

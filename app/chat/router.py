@@ -16,6 +16,7 @@ from app.products.models import UserProduct
 from .schemas import SurveyRequest, ChatMessageRequest, ChatMessageResponse, ChatListResponse
 from . import schemas
 from . import service
+from app.core.observability import posthog_client
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -55,6 +56,12 @@ async def start_chat(
         )
 
         # 4. 유저에게는 user_product_id와 설문지 전달
+        if posthog_client:
+            posthog_client.capture(
+                distinct_id=str(current_user.user_id),
+                event="chat_started",
+                properties={"user_product_id": user_prod.user_product_id},
+            )
         return {
             "status": "ANALYSIS_STARTED",
             "user_product_id": user_prod.user_product_id,
@@ -130,6 +137,12 @@ async def finalize_survey(
         first_response=first_response
     )
     service.save_survey_answers_redis(user_product_id, user_answers)
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(current_user.user_id),
+            event="survey_submitted",
+            properties={"user_product_id": user_product_id},
+        )
 
     return schemas.ChatReply(user_product_id=user_product_id, reply=first_response)
 
@@ -235,7 +248,17 @@ async def exit_chat(
         result.update(llm_result)
     except Exception as e:
         print(f"Warning: Failed to send [EXIT] to LLM: {str(e)}")
-        
+
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(current_user.user_id),
+            event="chat_exited",
+            properties={
+                "user_product_id": user_product_id,
+                "final_score": result.get("final_score"),
+            },
+        )
+
     return schemas.ChatReply(
         user_product_id=user_product_id,
         reply=result["message"],
@@ -261,6 +284,15 @@ async def send_message(
         user_product_id=user_product_id,
         user_input=request.message,
     )
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(current_user.user_id),
+            event="chat_message_sent",
+            properties={
+                "user_product_id": user_product_id,
+                "message_length": len(request.message),
+            },
+        )
 
     return schemas.ChatReply(
         user_product_id=user_product_id,

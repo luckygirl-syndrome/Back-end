@@ -7,9 +7,12 @@ from jose import jwt, JWTError
 from app.core.config import settings
 from fastapi.security import APIKeyHeader
 import json
-from app.core.security import create_access_token, decode_access_token
+from app.core.security import create_access_token, decode_access_token, hash_password, verify_password
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 from app.products.models import UserProduct, Product
 from sqlalchemy import func
+from app.core.observability import posthog_client
 
 router = APIRouter(prefix="/api", tags=["유저 관리"])
 api_key_header = APIKeyHeader(name="Authorization")
@@ -35,25 +38,96 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     
     new_user = models.User(
         email=user.email,
-        password=user.password, 
+        password=hash_password(user.password),
         nickname=user.nickname
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(new_user.user_id),
+            event="user_signed_up",
+            properties={"has_nickname": bool(new_user.nickname)},
+        )
+        posthog_client.set(
+            distinct_id=str(new_user.user_id),
+            properties={"nickname": new_user.nickname},
+        )
     return {"status": "success", "user_id": new_user.user_id, "email": new_user.email, "nickname": new_user.nickname}
 
 # 2. 로그인
 @router.post("/auth/login")
 def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == user_data.email).first()
-    if not user or user.password != user_data.password:
+    if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=401, detail="로그인 정보가 올바르지 않습니다.")
     
     access_token = create_access_token(data={"sub": user.email})
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(user.user_id),
+            event="user_logged_in",
+        )
     return {"status": "success", "access_token": access_token, "token_type": "bearer"}
 
-# 3. 내 프로필 조회
+# 3. 구글 로그인
+@router.post("/auth/google")
+def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)):
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            body.id_token,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+        )
+    except ValueError:
+        raise HTTPException(status_code=401, detail="유효하지 않은 구글 토큰입니다.")
+
+    email = idinfo.get("email")
+    google_sub = idinfo.get("sub")
+    name = idinfo.get("name", "")
+    picture = idinfo.get("picture", "")
+
+    if not email:
+        raise HTTPException(status_code=400, detail="구글 계정에서 이메일을 가져올 수 없습니다.")
+
+    existing_user = db.query(models.User).filter(models.User.email == email).first()
+
+    if existing_user:
+        if existing_user.social_provider != "google":
+            raise HTTPException(status_code=400, detail="이미 이메일로 가입된 계정입니다. 일반 로그인을 이용해주세요.")
+        user = existing_user
+        is_new_user = False
+    else:
+        user = models.User(
+            email=email,
+            password=None,
+            nickname=name,
+            profile_img=picture,
+            social_provider="google",
+            social_id=google_sub,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        is_new_user = True
+        if posthog_client:
+            posthog_client.capture(
+                distinct_id=str(user.user_id),
+                event="user_signed_up",
+                properties={"provider": "google", "has_nickname": bool(user.nickname)},
+            )
+
+    access_token = create_access_token(data={"sub": user.email})
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(user.user_id),
+            event="user_logged_in",
+            properties={"provider": "google"},
+        )
+    return {"status": "success", "access_token": access_token, "token_type": "bearer", "is_new_user": is_new_user}
+
+# 4. 내 프로필 조회
 @router.get("/profile", response_model=schemas.ProfileRead)
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
     profile_data = {
@@ -66,9 +140,9 @@ def get_my_profile(current_user: models.User = Depends(get_current_user)):
         try:
             persona_json = json.loads(current_user.persona_type)
             profile_data["description"] = persona_json.get("description", "")
-        except:
+        except Exception:
             pass
-            
+
     return profile_data
 
 # 4. 프로필 수정 (닉네임, 이미지)
@@ -86,6 +160,11 @@ def update_sbti_complex(data: schemas.SbtiFinalResult, db: Session = Depends(get
     current_user.persona_type = json.dumps(data.model_dump(), ensure_ascii=False)
     db.commit()
     db.refresh(current_user)
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(current_user.user_id),
+            event="persona_updated",
+        )
     return {"status": "success", "persona": data}
 
 @router.get("/profile/persona", response_model=schemas.PersonaRead)
@@ -93,13 +172,20 @@ def get_my_persona(current_user: models.User = Depends(get_current_user)):
     if not current_user.persona_type: return {"persona": None}
     try:
         return {"persona": json.loads(current_user.persona_type)}
-    except: return {"persona": None}
+    except Exception:
+        return {"persona": None}
 
 # 6. 관심 쇼핑몰 저장/조회
 @router.post("/profile/shop")
 def update_favorite_shops(data: schemas.UserShopsUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.favorite_shops = json.dumps(data.favorite_shops, ensure_ascii=False)
     db.commit()
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(current_user.user_id),
+            event="favorite_shops_updated",
+            properties={"shop_count": len(data.favorite_shops)},
+        )
     return {"status": "success", "favorite_shops": data.favorite_shops}
 
 @router.get("/profile/shop")

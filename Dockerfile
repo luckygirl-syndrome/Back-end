@@ -14,11 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 
-# torch 제외 먼저 설치 후, torch만 CUDA 휠로 설치 (pip이 CPU 휠로 덮어쓰지 않도록)
-RUN pip install --upgrade pip && \
-    grep -v "^torch==" requirements.txt > /tmp/req_no_torch.txt && \
-    pip install -r /tmp/req_no_torch.txt && \
-    pip install torch==2.5.1 --index-url https://download.pytorch.org/whl/cu121
+RUN pip install --upgrade pip && pip install -r requirements.txt
 
 COPY . .
 

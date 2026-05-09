@@ -32,6 +32,26 @@ services:
     networks:
       - ttobaba-network
 
+  postgres:
+    image: postgres:16-alpine
+    container_name: ttobaba-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    networks:
+      - ttobaba-network
+
   # ── FastAPI 백엔드 ──
   app:
     build: .
@@ -42,21 +62,23 @@ services:
     env_file:
       - .env
     environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
       REDIS_HOST: redis
       REDIS_PORT: 6379
       SELENIUM_URL: http://selenium:4444/wd/hub
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
-      selenium:
-        condition: service_started
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
+    # [GPU 임시 비활성화] GPU 인스턴스로 전환 시 아래 주석 해제
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/api/health')"]
       interval: 30s
@@ -67,20 +89,20 @@ services:
     networks:
       - ttobaba-network
 
-  selenium:
-    image: selenium/standalone-chrome:latest
-    container_name: ttobaba-selenium
-    shm_size: 2gb
-    ports:
-      - "4444:4444"
-    networks:
-      - ttobaba-network
-    restart: unless-stopped
+  # selenium:              # LLM 전환으로 비활성화 (Playwright로 대체)
+  #   image: selenium/standalone-chrome:latest
+  #   container_name: ttobaba-selenium
+  #   shm_size: 2gb
+  #   ports:
+  #     - "4444:4444"
+  #   networks:
+  #     - ttobaba-network
+  #   restart: unless-stopped
 
   redis:
     image: redis:7.2-alpine
     ports:
-    - "6379:6379"
+      - "6379:6379"
     container_name: ttobaba-redis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

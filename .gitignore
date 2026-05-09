@@ -1,9 +1,28 @@
-.DS_Store
+# 환경 변수
 .env
+
+# Python
 __pycache__/
-venv/
-.env
-student_distilled_e5_rule/
-*.pyc
 **/__pycache__/
 *.pyc
+*.pyo
+
+# 가상환경
+venv/
+.venv/
+
+# DB 데이터
+postgres_data/
+redis_data/
+
+# SSL 인증서
+certbot/
+
+# 로그
+*.log
+
+# macOS
+.DS_Store
+
+# AI 모델 (용량 큰 파일)
+student_distilled_e5_rule/

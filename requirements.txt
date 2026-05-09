@@ -10,12 +10,12 @@ email-validator==2.2.0
 
 # --- [AI Core]
 scikit-learn==1.6.1
-torch==2.5.1
+torch==2.9.0
 transformers==5.2.0
 joblib==1.5.3
 numpy==2.4.2
 pandas==3.0.1
-safetensors==0.4.5
+safetensors==0.7.0
 
 # --- [Scraping & Data] ---
 beautifulsoup4==4.14.3
@@ -26,7 +26,7 @@ blinker==1.5.0
 # --- [DB & Infrastructure] ---
 SQLAlchemy==2.0.46
 redis==7.2.0
-PyMySQL==1.1.2
+psycopg[binary]==3.3.4
 google-generativeai==0.8.6
 
 # --- [Security & Utils] ---

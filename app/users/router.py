@@ -10,6 +10,7 @@ import json
 from app.core.security import create_access_token, decode_access_token
 from app.products.models import UserProduct, Product
 from sqlalchemy import func
+from app.core.observability import posthog_client
 
 router = APIRouter(prefix="/api", tags=["유저 관리"])
 api_key_header = APIKeyHeader(name="Authorization")
@@ -41,6 +42,16 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(new_user.user_id),
+            event="user_signed_up",
+            properties={"has_nickname": bool(new_user.nickname)},
+        )
+        posthog_client.set(
+            distinct_id=str(new_user.user_id),
+            properties={"nickname": new_user.nickname},
+        )
     return {"status": "success", "user_id": new_user.user_id, "email": new_user.email, "nickname": new_user.nickname}
 
 # 2. 로그인
@@ -51,6 +62,11 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="로그인 정보가 올바르지 않습니다.")
     
     access_token = create_access_token(data={"sub": user.email})
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(user.user_id),
+            event="user_logged_in",
+        )
     return {"status": "success", "access_token": access_token, "token_type": "bearer"}
 
 # 3. 내 프로필 조회
@@ -86,6 +102,11 @@ def update_sbti_complex(data: schemas.SbtiFinalResult, db: Session = Depends(get
     current_user.persona_type = json.dumps(data.model_dump(), ensure_ascii=False)
     db.commit()
     db.refresh(current_user)
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(current_user.user_id),
+            event="persona_updated",
+        )
     return {"status": "success", "persona": data}
 
 @router.get("/profile/persona", response_model=schemas.PersonaRead)
@@ -100,6 +121,12 @@ def get_my_persona(current_user: models.User = Depends(get_current_user)):
 def update_favorite_shops(data: schemas.UserShopsUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.favorite_shops = json.dumps(data.favorite_shops, ensure_ascii=False)
     db.commit()
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(current_user.user_id),
+            event="favorite_shops_updated",
+            properties={"shop_count": len(data.favorite_shops)},
+        )
     return {"status": "success", "favorite_shops": data.favorite_shops}
 
 @router.get("/profile/shop")

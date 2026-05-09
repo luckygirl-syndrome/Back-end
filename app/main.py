@@ -1,11 +1,13 @@
 import redis
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
-
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.config import settings
+from app.core.observability import init_sentry
 from app.core.database import engine, Base, get_db
+
+init_sentry(dsn=settings.SENTRY_DSN, env=settings.ENV)
 from app.users.router import router as user_router
 from app.users import models
 from app.products import router as products_router

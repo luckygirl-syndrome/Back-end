@@ -9,7 +9,9 @@ class User(Base):
     user_id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
     nickname = Column(String(50))
     email = Column(String(255), unique=True, index=True)
-    password = Column(String(100))
+    password = Column(String(100), nullable=True)
+    social_provider = Column(String(20), nullable=True)
+    social_id = Column(String(255), nullable=True)
     persona_type = Column(String(50), nullable=True)
     profile_img = Column(String(255), default="0")
 

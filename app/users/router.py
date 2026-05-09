@@ -7,7 +7,7 @@ from jose import jwt, JWTError
 from app.core.config import settings
 from fastapi.security import APIKeyHeader
 import json
-from app.core.security import create_access_token, decode_access_token
+from app.core.security import create_access_token, decode_access_token, hash_password, verify_password
 from app.products.models import UserProduct, Product
 from sqlalchemy import func
 from app.core.observability import posthog_client
@@ -36,7 +36,7 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     
     new_user = models.User(
         email=user.email,
-        password=user.password, 
+        password=hash_password(user.password),
         nickname=user.nickname
     )
     db.add(new_user)
@@ -58,7 +58,7 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 @router.post("/auth/login")
 def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == user_data.email).first()
-    if not user or user.password != user_data.password:
+    if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=401, detail="로그인 정보가 올바르지 않습니다.")
     
     access_token = create_access_token(data={"sub": user.email})
@@ -82,9 +82,9 @@ def get_my_profile(current_user: models.User = Depends(get_current_user)):
         try:
             persona_json = json.loads(current_user.persona_type)
             profile_data["description"] = persona_json.get("description", "")
-        except:
+        except Exception:
             pass
-            
+
     return profile_data
 
 # 4. 프로필 수정 (닉네임, 이미지)
@@ -114,7 +114,8 @@ def get_my_persona(current_user: models.User = Depends(get_current_user)):
     if not current_user.persona_type: return {"persona": None}
     try:
         return {"persona": json.loads(current_user.persona_type)}
-    except: return {"persona": None}
+    except Exception:
+        return {"persona": None}
 
 # 6. 관심 쇼핑몰 저장/조회
 @router.post("/profile/shop")

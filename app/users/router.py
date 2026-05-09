@@ -8,6 +8,8 @@ from app.core.config import settings
 from fastapi.security import APIKeyHeader
 import json
 from app.core.security import create_access_token, decode_access_token, hash_password, verify_password
+from google.oauth2 import id_token as google_id_token
+from google.auth.transport import requests as google_requests
 from app.products.models import UserProduct, Product
 from sqlalchemy import func
 from app.core.observability import posthog_client
@@ -69,7 +71,63 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
         )
     return {"status": "success", "access_token": access_token, "token_type": "bearer"}
 
-# 3. 내 프로필 조회
+# 3. 구글 로그인
+@router.post("/auth/google")
+def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)):
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            body.id_token,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+        )
+    except ValueError:
+        raise HTTPException(status_code=401, detail="유효하지 않은 구글 토큰입니다.")
+
+    email = idinfo.get("email")
+    google_sub = idinfo.get("sub")
+    name = idinfo.get("name", "")
+    picture = idinfo.get("picture", "")
+
+    if not email:
+        raise HTTPException(status_code=400, detail="구글 계정에서 이메일을 가져올 수 없습니다.")
+
+    existing_user = db.query(models.User).filter(models.User.email == email).first()
+
+    if existing_user:
+        if existing_user.social_provider != "google":
+            raise HTTPException(status_code=400, detail="이미 이메일로 가입된 계정입니다. 일반 로그인을 이용해주세요.")
+        user = existing_user
+        is_new_user = False
+    else:
+        user = models.User(
+            email=email,
+            password=None,
+            nickname=name,
+            profile_img=picture,
+            social_provider="google",
+            social_id=google_sub,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        is_new_user = True
+        if posthog_client:
+            posthog_client.capture(
+                distinct_id=str(user.user_id),
+                event="user_signed_up",
+                properties={"provider": "google", "has_nickname": bool(user.nickname)},
+            )
+
+    access_token = create_access_token(data={"sub": user.email})
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(user.user_id),
+            event="user_logged_in",
+            properties={"provider": "google"},
+        )
+    return {"status": "success", "access_token": access_token, "token_type": "bearer", "is_new_user": is_new_user}
+
+# 4. 내 프로필 조회
 @router.get("/profile", response_model=schemas.ProfileRead)
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
     profile_data = {

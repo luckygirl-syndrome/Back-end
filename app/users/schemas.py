@@ -43,6 +43,10 @@ class SbtiFinalResult(BaseModel):
 class PersonaRead(BaseModel):
     persona: Optional[SbtiFinalResult] = None
 
+# 3. 구글 로그인용
+class GoogleLoginRequest(BaseModel):
+    id_token: str
+
 # 4. 프로필 수정용
 class ProfileUpdate(BaseModel):
     nickname: Optional[str] = None

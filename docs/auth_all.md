@@ -125,7 +125,38 @@ Future<void> signInWithGoogle() async {
 
 ---
 
-## 3. 카카오 로그인
+## 3. 구글 계정 연결
+
+이미 이메일/카카오로 가입한 유저가 구글 계정을 연결할 때 사용해요.
+
+```
+POST https://ttobaba.shop/api/auth/google/connect
+Authorization: Bearer <access_token>
+```
+```json
+// 요청
+{
+  "id_token": "구글_ID_Token"
+}
+
+// 응답
+{
+  "status": "success",
+  "message": "구글 계정이 연결되었습니다."
+}
+```
+
+연결 후에는 구글 로그인으로도 같은 계정에 로그인돼요.
+
+**에러 케이스**
+| 상황 | 상태 코드 | 메시지 |
+|------|-----------|--------|
+| 이미 구글 연결된 계정 | 400 | 이미 구글 계정이 연결되어 있습니다. |
+| 다른 계정에 이미 연결된 구글 | 400 | 이미 다른 계정에 연결된 구글 계정입니다. |
+
+---
+
+## 4. 카카오 로그인
 
 ```
 POST https://ttobaba.shop/api/auth/kakao
@@ -189,7 +220,7 @@ dependencies:
 
 ---
 
-## 4. 카카오 계정 연결
+## 5. 카카오 계정 연결
 
 이미 이메일/구글로 가입한 유저가 카카오 계정을 연결할 때 사용해요.
 

@@ -129,7 +129,40 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
         )
     return {"status": "success", "access_token": access_token, "token_type": "bearer", "is_new_user": is_new_user}
 
-# 4. 카카오 로그인
+# 4. 구글 계정 연결 (기존 로그인 유저)
+@router.post("/auth/google/connect")
+def google_connect(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if current_user.social_provider == "google":
+        raise HTTPException(status_code=400, detail="이미 구글 계정이 연결되어 있습니다.")
+
+    try:
+        idinfo = google_id_token.verify_oauth2_token(
+            body.id_token,
+            google_requests.Request(),
+            settings.GOOGLE_CLIENT_ID,
+        )
+    except ValueError:
+        raise HTTPException(status_code=401, detail="유효하지 않은 구글 토큰입니다.")
+
+    google_sub = idinfo.get("sub")
+    email = idinfo.get("email")
+
+    already_linked = db.query(models.User).filter(
+        models.User.social_id == google_sub,
+        models.User.social_provider == "google"
+    ).first()
+    if already_linked:
+        raise HTTPException(status_code=400, detail="이미 다른 계정에 연결된 구글 계정입니다.")
+
+    current_user.social_provider = "google"
+    current_user.social_id = google_sub
+    if email and not current_user.email:
+        current_user.email = email
+    db.commit()
+
+    return {"status": "success", "message": "구글 계정이 연결되었습니다."}
+
+# 5. 카카오 로그인
 @router.post("/auth/kakao")
 def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
     try:

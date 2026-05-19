@@ -33,6 +33,7 @@ google-auth==2.40.2
 # --- [Security & Utils] ---
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
+bcrypt==4.0.1  # passlib 1.7.4 + bcrypt>=4.1 incompat (detect_wrap_bug ValueError). pin until passlib bump.
 cryptography==43.0.3
 Requests==2.32.5
 protobuf==5.29.6

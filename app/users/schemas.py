@@ -50,6 +50,9 @@ class GoogleLoginRequest(BaseModel):
 class KakaoLoginRequest(BaseModel):
     id_token: str
 
+class AppleLoginRequest(BaseModel):
+    id_token: str
+
 # 4. 프로필 수정용
 class ProfileUpdate(BaseModel):
     nickname: Optional[str] = None

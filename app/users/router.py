@@ -272,7 +272,111 @@ def kakao_connect(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)
 
     return {"status": "success", "message": "카카오 계정이 연결되었습니다."}
 
-# 6. 내 프로필 조회
+def _verify_apple_token(id_token: str) -> dict:
+    try:
+        jwks_response = httpx.get("https://appleid.apple.com/auth/keys")
+        jwks = jwks_response.json()
+
+        header = jose_jwt.get_unverified_header(id_token)
+        kid = header.get("kid")
+
+        public_key = next((k for k in jwks["keys"] if k["kid"] == kid), None)
+        if not public_key:
+            raise HTTPException(status_code=401, detail="유효하지 않은 애플 토큰입니다.")
+
+        payload = jose_jwt.decode(
+            id_token,
+            public_key,
+            algorithms=["RS256"],
+            audience=settings.APPLE_CLIENT_ID,
+            issuer="https://appleid.apple.com",
+        )
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="유효하지 않은 애플 토큰입니다.")
+
+
+# 6. 애플 로그인
+@router.post("/auth/apple")
+def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
+    payload = _verify_apple_token(body.id_token)
+
+    apple_sub = payload.get("sub")
+    email = payload.get("email")
+
+    if not apple_sub:
+        raise HTTPException(status_code=400, detail="애플 토큰에서 유저 정보를 가져올 수 없습니다.")
+
+    existing_user = db.query(models.User).filter(
+        models.User.social_id == apple_sub,
+        models.User.social_provider == "apple"
+    ).first()
+
+    if existing_user:
+        user = existing_user
+        is_new_user = False
+    else:
+        # 같은 이메일로 가입된 계정이 있으면 충돌 방지
+        if email:
+            email_user = db.query(models.User).filter(models.User.email == email).first()
+            if email_user:
+                raise HTTPException(status_code=400, detail="이미 해당 이메일로 가입된 계정입니다. 기존 로그인 방식을 이용해주세요.")
+
+        user = models.User(
+            email=email,
+            password=None,
+            nickname="",
+            social_provider="apple",
+            social_id=apple_sub,
+        )
+        db.add(user)
+        db.commit()
+        db.refresh(user)
+        is_new_user = True
+        if posthog_client:
+            posthog_client.capture(
+                distinct_id=str(user.user_id),
+                event="user_signed_up",
+                properties={"provider": "apple", "has_nickname": bool(user.nickname)},
+            )
+
+    access_token = create_access_token(data={"sub": str(user.user_id)})
+    if posthog_client:
+        posthog_client.capture(
+            distinct_id=str(user.user_id),
+            event="user_logged_in",
+            properties={"provider": "apple"},
+        )
+    return {"status": "success", "access_token": access_token, "token_type": "bearer", "is_new_user": is_new_user}
+
+
+# 6-1. 애플 계정 연결 (기존 로그인 유저)
+@router.post("/auth/apple/connect")
+def apple_connect(body: schemas.AppleLoginRequest, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    if current_user.social_provider == "apple":
+        raise HTTPException(status_code=400, detail="이미 애플 계정이 연결되어 있습니다.")
+
+    payload = _verify_apple_token(body.id_token)
+
+    apple_sub = payload.get("sub")
+    if not apple_sub:
+        raise HTTPException(status_code=400, detail="애플 토큰에서 유저 정보를 가져올 수 없습니다.")
+
+    already_linked = db.query(models.User).filter(
+        models.User.social_id == apple_sub,
+        models.User.social_provider == "apple"
+    ).first()
+    if already_linked:
+        raise HTTPException(status_code=400, detail="이미 다른 계정에 연결된 애플 계정입니다.")
+
+    current_user.social_provider = "apple"
+    current_user.social_id = apple_sub
+    db.commit()
+
+    return {"status": "success", "message": "애플 계정이 연결되었습니다."}
+
+
+# 7. 내 프로필 조회
 @router.get("/profile", response_model=schemas.ProfileRead)
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
     profile_data = {

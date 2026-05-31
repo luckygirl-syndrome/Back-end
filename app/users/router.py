@@ -444,21 +444,16 @@ def update_favorite_shops(data: schemas.UserShopsUpdate, db: Session = Depends(g
         )
     return success({"favoriteShops": data.favorite_shops})
 
-@router.get("/profile/shop")
-def get_favorite_shops(current_user: models.User = Depends(get_current_user)):
-    shops = json.loads(current_user.favorite_shops) if current_user.favorite_shops else []
-    return success({"favoriteShops": shops})
-
-# 7. 추구미 저장/조회
-@router.post("/profile/chugume")
-def update_chugume(data: schemas.ChugumeUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    current_user.chu_gu_me = data.chugume_type.value
+# 7. 나의 취향 저장/조회
+@router.post("/profile/style")
+def update_style(data: schemas.StyleUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    current_user.style = data.style.value
     db.commit()
-    return success(message=f"추구미가 '{current_user.chu_gu_me}'로 설정되었습니다.")
-    
-@router.get("/profile/chugume")
-def get_chugume(current_user: models.User = Depends(get_current_user)):
-    return success({"chugumeType": current_user.chu_gu_me})
+    return success({"style": current_user.style})
+
+@router.get("/profile/style")
+def get_style(current_user: models.User = Depends(get_current_user)):
+    return success({"style": current_user.style})
 
 # 8. 나의 옷장 통계 조회
 @router.get("/profile/closet")

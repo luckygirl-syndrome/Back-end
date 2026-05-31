@@ -66,14 +66,22 @@ class ShopName(str, Enum):
 class UserShopsUpdate(BaseModel):
     favorite_shops: List[ShopName]
 
-class ChugumeType(str, Enum):
+class StyleType(str, Enum):
+    SIMPLE_BASIC = "심플베이직"
+    ROCK_CHIC = "락시크"
+    HIP = "힙"
+    FEMININE = "페미닌"
+    LOVELY = "러블리"
     MORI = "모리걸"
-    DEMURE = "드뮤어"
-    GIRLCORE = "걸코어"
-    SPORTY = "스포티 글램"
+    VINTAGE = "빈티지"
+    STREET = "스트릿"
+    CASUAL = "캐주얼"
+    SEXY_GLAM = "섹시글램"
+    SPORTY = "스포티"
+    MINIMAL = "미니멀"
 
-class ChugumeUpdate(BaseModel):
-    chugume_type: ChugumeType
+class StyleUpdate(BaseModel):
+    style: StyleType
 
 # 6. 나의 옷장 통계 (마이페이지)
 class ClosetStatsRead(BaseModel):

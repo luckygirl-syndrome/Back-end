@@ -434,13 +434,31 @@ def get_my_persona(current_user: models.User = Depends(get_current_user)):
 # 7. 나의 취향 저장/조회
 @router.post("/profile/style")
 def update_style(data: schemas.StyleUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    current_user.style = data.style.value
+    current_user.style = [s.value for s in data.style]
     db.commit()
     return success({"style": current_user.style})
 
 @router.get("/profile/style")
 def get_style(current_user: models.User = Depends(get_current_user)):
-    return success({"style": current_user.style})
+    return success({"style": current_user.style or []})
+
+# 8. 온보딩
+@router.post("/initial-question")
+def submit_onboarding(data: schemas.OnboardingCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    current_user.age_group = data.age_group.value
+    current_user.style = [s.value for s in data.style]
+    current_user.regret_frequency = data.regret_frequency.value
+
+    if data.regret_frequency == schemas.RegretFrequency.NONE:
+        current_user.regret_reasons = []
+    else:
+        reasons = [r for r in (data.regret_reasons or [])]
+        if data.regret_reason_custom:
+            reasons.append(data.regret_reason_custom)
+        current_user.regret_reasons = reasons
+
+    db.commit()
+    return success(message="온보딩이 완료되었습니다.")
 
 # 8. 나의 옷장 통계 조회
 @router.get("/profile/closet")

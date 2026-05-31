@@ -80,8 +80,36 @@ class StyleType(str, Enum):
     SPORTY = "스포티"
     MINIMAL = "미니멀"
 
+class AgeGroup(str, Enum):
+    TEEN = "10대"
+    TWENTY_EARLY = "20~24"
+    TWENTY_LATE = "25~29"
+    THIRTY_PLUS = "30대 이상"
+
+class RegretFrequency(str, Enum):
+    NONE = "없어요"
+    ONE_TO_TWO = "1~2번 정도"
+    THREE_PLUS = "3번 이상"
+
+class RegretReason(str, Enum):
+    DUPLICATE = "비슷한 옷이 이미 있었어요"
+    NO_OCCASION = "막상 입을 일이 없었어요"
+    IMPULSE = "할인이나 한정 특가에 급하게 결제했어요"
+    DIFFERENT_FROM_PHOTO = "사진이랑 실물이 너무 달랐어요"
+    LOW_QUALITY = "소재나 퀄리티가 기대 이하였어요"
+    BAD_FIT = "핏이 예상과 달랐어요"
+    DOESNT_SUIT = "나한테 어울리지 않았어요"
+    NO_MATCHING = "코디할 다른 옷이 없어서 결국 못 입었어요"
+
 class StyleUpdate(BaseModel):
-    style: StyleType
+    style: List[StyleType]
+
+class OnboardingCreate(BaseModel):
+    age_group: AgeGroup
+    style: List[StyleType]
+    regret_frequency: RegretFrequency
+    regret_reasons: Optional[List[str]] = None
+    regret_reason_custom: Optional[str] = None
 
 # 6. 나의 옷장 통계 (마이페이지)
 class ClosetStatsRead(BaseModel):

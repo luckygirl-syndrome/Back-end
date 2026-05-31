@@ -16,7 +16,10 @@ class User(Base):
     profile_img = Column(String(255), default="0")
 
     favorite_shops = Column(JSONB, nullable=True)
-    style = Column(String(30), nullable=True)
+    style = Column(JSONB, nullable=True)
+    age_group = Column(String(20), nullable=True)
+    regret_frequency = Column(String(30), nullable=True)
+    regret_reasons = Column(JSONB, nullable=True)
 
     mu_like = Column(JSONB, nullable=True)
     mu_regret = Column(JSONB, nullable=True)

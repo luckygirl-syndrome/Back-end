@@ -53,10 +53,9 @@ class KakaoLoginRequest(BaseModel):
 class AppleLoginRequest(BaseModel):
     id_token: str
 
-# 4. 프로필 수정용
-class ProfileUpdate(BaseModel):
-    nickname: Optional[str] = None
-    profile_img: Optional[str] = None
+# 4. 닉네임 수정용
+class NicknameUpdate(BaseModel):
+    nickname: str
     
 # 5. 쇼핑몰 및 추구미 (언니가 저장해달라고 했던 핵심 기능!)
 class ShopName(str, Enum):

@@ -84,8 +84,9 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
             google_requests.Request(),
             settings.GOOGLE_CLIENT_ID,
         )
-    except ValueError:
-        raise HTTPException(status_code=401, detail="유효하지 않은 구글 토큰입니다.")
+    except ValueError as e:
+        logger.error(f"[구글 로그인 실패] {e}")
+        raise HTTPException(status_code=401, detail=f"유효하지 않은 구글 토큰입니다: {e}")
 
     email = idinfo.get("email")
     google_sub = idinfo.get("sub")

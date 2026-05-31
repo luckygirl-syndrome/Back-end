@@ -431,19 +431,6 @@ def get_my_persona(current_user: models.User = Depends(get_current_user)):
     except Exception:
         return success({"persona": None})
 
-# 6. 관심 쇼핑몰 저장/조회
-@router.post("/profile/shop")
-def update_favorite_shops(data: schemas.UserShopsUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    current_user.favorite_shops = json.dumps(data.favorite_shops, ensure_ascii=False)
-    db.commit()
-    if posthog_client:
-        posthog_client.capture(
-            distinct_id=str(current_user.user_id),
-            event="favorite_shops_updated",
-            properties={"shop_count": len(data.favorite_shops)},
-        )
-    return success({"favoriteShops": data.favorite_shops})
-
 # 7. 나의 취향 저장/조회
 @router.post("/profile/style")
 def update_style(data: schemas.StyleUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):

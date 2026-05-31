@@ -182,7 +182,7 @@ def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
             body.id_token,
             public_key,
             algorithms=["RS256"],
-            audience=settings.KAKAO_REST_API_KEY,
+            audience=settings.KAKAO_NATIVE_APP_KEY,
         )
     except JWTError:
         raise HTTPException(status_code=401, detail="유효하지 않은 카카오 토큰입니다.")
@@ -252,7 +252,7 @@ def kakao_connect(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)
             body.id_token,
             public_key,
             algorithms=["RS256"],
-            audience=settings.KAKAO_REST_API_KEY,
+            audience=settings.KAKAO_NATIVE_APP_KEY,
         )
     except JWTError:
         raise HTTPException(status_code=401, detail="유효하지 않은 카카오 토큰입니다.")

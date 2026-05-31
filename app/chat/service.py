@@ -261,7 +261,7 @@ def parse_and_save_product(db: Session, image_bytes: bytes, user: User, user_pro
 
         # 터미널 리포트
         prompt_data = {
-            "user_context": {"persona_type": user_persona_code, "target_style": getattr(user, 'chu_gu_me', '심플'), "n_effective": pref_out["n_effective"]},
+            "user_context": {"persona_type": user_persona_code, "target_style": getattr(user, 'style', '심플'), "n_effective": pref_out["n_effective"]},
             "analysis_result": {"total_prefer_score": total_pref_score, "impulse_score": impulse_score, "alpha_value": pref_out["alpha"]},
             "prior_analysis": {"score": pref_out["prior_score"], "top_reasons": [{"feature": r[0], "value": feature_values.get(r[0])} for r in pref_out["prior_reason_top2"]]},
             "personal_analysis": {
@@ -368,7 +368,7 @@ async def init_chat_session(
             "user_id": user_id,
             "persona_type": record.user_type,
             "frequent_malls": json.loads(user.favorite_shops) if user.favorite_shops and user.favorite_shops.startswith("[") else ([user.favorite_shops] if user.favorite_shops else []),
-            "target_style": getattr(user, 'chu_gu_me', '심플')
+            "target_style": getattr(user, 'style', '심플')
         },
         "product_context": {
             "name": product.product_name,

@@ -1,6 +1,37 @@
 version: "3.8"
 
 services:
+  # ── Nginx (리버스 프록시 + SSL 종료) ──
+  nginx:
+    image: nginx:1.25-alpine
+    container_name: ttobaba-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - ./certbot/conf:/etc/letsencrypt:ro
+      - ./certbot/www:/var/www/certbot:ro
+    depends_on:
+      app:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - ttobaba-network
+    command: "/bin/sh -c 'while :; do sleep 6h & wait $${!}; nginx -s reload; done & nginx -g \"daemon off;\"'"
+
+  # ── Certbot (SSL 인증서 자동 갱신) ──
+  certbot:
+    image: certbot/certbot:latest
+    container_name: ttobaba-certbot
+    volumes:
+      - ./certbot/conf:/etc/letsencrypt
+      - ./certbot/www:/var/www/certbot
+    entrypoint: "/bin/sh -c 'trap exit TERM; while :; do certbot renew --webroot -w /var/www/certbot --quiet; sleep 12h & wait $${!}; done;'"
+    restart: unless-stopped
+    networks:
+      - ttobaba-network
+
   postgres:
     image: postgres:16-alpine
     container_name: ttobaba-postgres
@@ -21,12 +52,13 @@ services:
     networks:
       - ttobaba-network
 
+  # ── FastAPI 백엔드 ──
   app:
     build: .
     image: ttobaba-backend:latest
     container_name: ttobaba-backend
-    ports:
-      - "8001:8001"
+    expose:
+      - "8001"
     env_file:
       - .env
     environment:
@@ -39,8 +71,6 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-      # selenium:          # LLM 전환으로 비활성화
-      #   condition: service_started
     # [GPU 임시 비활성화] GPU 인스턴스로 전환 시 아래 주석 해제
     # deploy:
     #   resources:
@@ -72,7 +102,7 @@ services:
   redis:
     image: redis:7.2-alpine
     ports:
-    - "6379:6379"
+      - "6379:6379"
     container_name: ttobaba-redis
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]

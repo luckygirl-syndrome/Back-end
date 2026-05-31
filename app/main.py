@@ -16,7 +16,6 @@ from app.chat import repository as chat_repository
 from app.chat import agent as chat_agent
 from app.dashboard import home_router
 from app.chat.after_chat.router import router as after_chat_router
-from fastapi.middleware.cors import CORSMiddleware
 
 
 # 서버 시작 시 테이블 생성
@@ -49,21 +48,6 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
-
-origins = [
-    "https://ttobaba-d8859.web.app",
-    "https://ttobaba.shop",
-    "https://www.ttobaba.shop",
-]
-
-# CORS 설정
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
 # 라우터 등록
 app.include_router(user_router)

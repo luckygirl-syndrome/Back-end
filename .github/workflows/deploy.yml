@@ -29,6 +29,9 @@ jobs:
             # app뿐만 아니라 연관된 서비스들도 함께 빌드하도록 수정
             docker compose up -d --build
             
+            echo "🔄 nginx 설정 리로드 (CORS 등 conf.d 반영)..."
+            docker compose exec -T nginx nginx -s reload || true
+            
             echo "🧹 오래된 이미지 정리 중..."
             docker image prune -f
             

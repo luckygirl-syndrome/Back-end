@@ -7,7 +7,7 @@ WEIGHT_MATRIX = {
     'review_count':      {'D': 1.0, 'N': 1.2, 'S': 1.2, 'A': 0.9, 'T': 1.5, 'M': 0.6}, # M형 특수로직 적용 대상
     'review_score':      {'D': 1.0, 'N': 1.2, 'S': 1.2, 'A': 1.0, 'T': 1.3, 'M': 1.0},
     'product_like':      {'D': 1.0, 'N': 1.0, 'S': 1.1, 'A': 1.0, 'T': 1.1, 'M': 0.8},
-    'shipping_info':     {'D': 1.0, 'N': 1.1, 'S': 1.0, 'A': 1.0, 'T': 1.0, 'M': 1.0},
+    'is_direct_shipping': {'D': 1.0, 'N': 1.1, 'S': 1.0, 'A': 1.0, 'T': 1.0, 'M': 1.0},
     'free_shipping':     {'D': 1.0, 'N': 1.1, 'S': 1.0, 'A': 1.0, 'T': 1.0, 'M': 1.0},
     
     # [텍스트형 지표]
@@ -28,7 +28,7 @@ RISK_LEVELS = [
 # 챗봇 설명용 한글 매핑
 FEATURE_KO = {
     'discount_rate': '할인율', 'review_count': '리뷰 수', 'review_score': '평점',
-    'product_like': '찜 수', 'shipping_info': '배송 정보', 'free_shipping': '무료 배송',
+    'product_like': '찜 수', 'is_direct_shipping': '배송 정보', 'free_shipping': '무료 배송',
     'sim_trend_hype': '유행/대란 키워드', 'sim_temptation': '자극적 홍보 문구',
     'sim_fit_anxiety': '핏/체형 보정 문구', 'sim_quality_logic': '소재/퀄리티 강조',
     'sim_bundle': '1+1/묶음 할인', 'sim_confidence': 'MD추천/보증'
@@ -92,7 +92,7 @@ def analyze_product_risk(product_json: dict, persona_code: str):
         raw_scores['review_count'] = base_rc_score
 
     # [바이너리 피처]
-    raw_scores['shipping_info'] = 7 if product_json.get('shipping_info', 0) else 0
+    raw_scores['is_direct_shipping'] = 7 if product_json.get('is_direct_shipping', 0) else 0
     raw_scores['free_shipping'] = 7 if product_json.get('free_shipping', 0) else 0
     
     text_features = ['sim_temptation', 'sim_fit_anxiety', 'sim_trend_hype',

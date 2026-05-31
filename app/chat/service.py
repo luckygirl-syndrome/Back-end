@@ -76,7 +76,7 @@ print(f"🚀 DEBUG: PRIOR_MODEL_DIR is -> {PRIOR_MODEL_DIR}")
 # 챗봇 설명용 한글 매핑
 FEATURE_KO = {
     'discount_rate': '할인율', 'review_count': '리뷰 수', 'review_score': '평점',
-    'product_like': '찜 수', 'shipping_info': '배송 정보', 'free_shipping': '무료 배송',
+    'product_like': '찜 수', 'is_direct_shipping': '배송 정보', 'free_shipping': '무료 배송',
     'sim_trend_hype': '유행/대란 키워드', 'sim_temptation': '자극적 홍보 문구',
     'sim_fit_anxiety': '핏/체형 보정 문구', 'sim_quality_logic': '소재/퀄리티 강조',
     'sim_bundle': '1+1/묶음 할인', 'sim_confidence': 'MD추천/보증'

@@ -19,29 +19,29 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
-# 2. 기본 프로필 조회용 (router의 get_my_profile과 규격 맞춤)
-class ProfileRead(BaseModel):
+# 2. 기본 프로필 조회용
+class ProfileData(BaseModel):
     nickname: str
     profile_img: str
-    description: str
+    fbti_name: str
 
-    class Config:
-        from_attributes = True
+class ProfileRead(BaseModel):
+    profile_data: ProfileData
 
-# 3. SBTI/페르소나 데이터 구조
+# 3. FBTI/페르소나 데이터 구조
 class AxisScore(BaseModel):
     result: str    # "D" 또는 "N" 등
     score: int     # 0~3
 
-class SbtiFinalResult(BaseModel):
-    persona_type: str  # "DSN"
-    description: str   # "도파민 중독자"
+class FbtiFinalResult(BaseModel):
+    persona_type: str  # "DUTE" 등 4글자 코드
     d_vs_n: AxisScore
-    s_vs_a: AxisScore
-    m_vs_t: AxisScore 
+    u_vs_i: AxisScore
+    t_vs_m: AxisScore
+    e_vs_o: AxisScore
 
 class PersonaRead(BaseModel):
-    persona: Optional[SbtiFinalResult] = None
+    persona: Optional[FbtiFinalResult] = None
 
 # 3. 소셜 로그인용
 class GoogleLoginRequest(BaseModel):
@@ -53,10 +53,9 @@ class KakaoLoginRequest(BaseModel):
 class AppleLoginRequest(BaseModel):
     id_token: str
 
-# 4. 프로필 수정용
-class ProfileUpdate(BaseModel):
-    nickname: Optional[str] = None
-    profile_img: Optional[str] = None
+# 4. 닉네임 수정용
+class NicknameUpdate(BaseModel):
+    nickname: str
     
 # 5. 쇼핑몰 및 추구미 (언니가 저장해달라고 했던 핵심 기능!)
 class ShopName(str, Enum):
@@ -67,14 +66,50 @@ class ShopName(str, Enum):
 class UserShopsUpdate(BaseModel):
     favorite_shops: List[ShopName]
 
-class ChugumeType(str, Enum):
+class StyleType(str, Enum):
+    SIMPLE_BASIC = "심플베이직"
+    ROCK_CHIC = "락시크"
+    HIP = "힙"
+    FEMININE = "페미닌"
+    LOVELY = "러블리"
     MORI = "모리걸"
-    DEMURE = "드뮤어"
-    GIRLCORE = "걸코어"
-    SPORTY = "스포티 글램"
+    VINTAGE = "빈티지"
+    STREET = "스트릿"
+    CASUAL = "캐주얼"
+    SEXY_GLAM = "섹시글램"
+    SPORTY = "스포티"
+    MINIMAL = "미니멀"
 
-class ChugumeUpdate(BaseModel):
-    chugume_type: ChugumeType
+class AgeGroup(str, Enum):
+    TEEN = "10대"
+    TWENTY_EARLY = "20~24"
+    TWENTY_LATE = "25~29"
+    THIRTY_PLUS = "30대 이상"
+
+class RegretFrequency(str, Enum):
+    NONE = "없어요"
+    ONE_TO_TWO = "1~2번 정도"
+    THREE_PLUS = "3번 이상"
+
+class RegretReason(str, Enum):
+    DUPLICATE = "비슷한 옷이 이미 있었어요"
+    NO_OCCASION = "막상 입을 일이 없었어요"
+    IMPULSE = "할인이나 한정 특가에 급하게 결제했어요"
+    DIFFERENT_FROM_PHOTO = "사진이랑 실물이 너무 달랐어요"
+    LOW_QUALITY = "소재나 퀄리티가 기대 이하였어요"
+    BAD_FIT = "핏이 예상과 달랐어요"
+    DOESNT_SUIT = "나한테 어울리지 않았어요"
+    NO_MATCHING = "코디할 다른 옷이 없어서 결국 못 입었어요"
+
+class StyleUpdate(BaseModel):
+    style: List[StyleType]
+
+class OnboardingCreate(BaseModel):
+    age_group: AgeGroup
+    style: List[StyleType]
+    regret_frequency: RegretFrequency
+    regret_reasons: Optional[List[str]] = None
+    regret_reason_custom: Optional[str] = None
 
 # 6. 나의 옷장 통계 (마이페이지)
 class ClosetStatsRead(BaseModel):

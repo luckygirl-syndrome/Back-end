@@ -15,6 +15,8 @@ from jose import jwt as jose_jwt
 from app.products.models import UserProduct, Product
 from sqlalchemy import func
 from app.core.observability import posthog_client
+from app.users.fbti_types import FBTI_TYPES
+from app.core.response import success
 
 router = APIRouter(prefix="/api", tags=["유저 관리"])
 api_key_header = APIKeyHeader(name="Authorization")
@@ -56,7 +58,7 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
             distinct_id=str(new_user.user_id),
             properties={"nickname": new_user.nickname},
         )
-    return {"status": "success", "user_id": new_user.user_id, "email": new_user.email, "nickname": new_user.nickname}
+    return success({"userId": new_user.user_id, "email": new_user.email, "nickname": new_user.nickname})
 
 # 2. 로그인
 @router.post("/auth/login")
@@ -71,7 +73,7 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
             distinct_id=str(user.user_id),
             event="user_logged_in",
         )
-    return {"status": "success", "access_token": access_token, "token_type": "bearer"}
+    return success({"accessToken": access_token, "tokenType": "bearer"})
 
 # 3. 구글 로그인
 @router.post("/auth/google")
@@ -127,7 +129,7 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
             event="user_logged_in",
             properties={"provider": "google"},
         )
-    return {"status": "success", "access_token": access_token, "token_type": "bearer", "is_new_user": is_new_user}
+    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
 
 # 4. 구글 계정 연결 (기존 로그인 유저)
 @router.post("/auth/google/connect")
@@ -160,7 +162,7 @@ def google_connect(body: schemas.GoogleLoginRequest, db: Session = Depends(get_d
         current_user.email = email
     db.commit()
 
-    return {"status": "success", "message": "구글 계정이 연결되었습니다."}
+    return success(message="구글 계정이 연결되었습니다.")
 
 # 5. 카카오 로그인
 @router.post("/auth/kakao")
@@ -227,7 +229,7 @@ def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
             event="user_logged_in",
             properties={"provider": "kakao"},
         )
-    return {"status": "success", "access_token": access_token, "token_type": "bearer", "is_new_user": is_new_user}
+    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
 
 # 5. 카카오 계정 연결 (기존 로그인 유저)
 @router.post("/auth/kakao/connect")
@@ -270,7 +272,7 @@ def kakao_connect(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)
     current_user.social_id = kakao_sub
     db.commit()
 
-    return {"status": "success", "message": "카카오 계정이 연결되었습니다."}
+    return success(message="카카오 계정이 연결되었습니다.")
 
 def _verify_apple_token(id_token: str) -> dict:
     try:
@@ -347,7 +349,7 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
             event="user_logged_in",
             properties={"provider": "apple"},
         )
-    return {"status": "success", "access_token": access_token, "token_type": "bearer", "is_new_user": is_new_user}
+    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
 
 
 # 6-1. 애플 계정 연결 (기존 로그인 유저)
@@ -373,39 +375,43 @@ def apple_connect(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)
     current_user.social_id = apple_sub
     db.commit()
 
-    return {"status": "success", "message": "애플 계정이 연결되었습니다."}
+    return success(message="애플 계정이 연결되었습니다.")
 
 
 # 7. 내 프로필 조회
-@router.get("/profile", response_model=schemas.ProfileRead)
+@router.get("/profile")
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
-    profile_data = {
-        "nickname": current_user.nickname,
-        "profile_img": str(current_user.profile_img) if current_user.profile_img else "1",
-        "description": ""
-    }
-    
+    fbti_name = ""
+    profile_img = str(current_user.profile_img) if current_user.profile_img else "1"
+
     if current_user.persona_type:
         try:
             persona_json = json.loads(current_user.persona_type)
-            profile_data["description"] = persona_json.get("description", "")
+            fbti_code = persona_json.get("persona_type", "").upper()
+            fbti_info = FBTI_TYPES.get(fbti_code)
+            if fbti_info:
+                fbti_name = fbti_info["name"]
+                profile_img = str(fbti_info["image_index"])
         except Exception:
             pass
 
-    return profile_data
+    return success({
+        "nickname": current_user.nickname,
+        "profileImg": profile_img,
+        "fbtiName": fbti_name,
+    })
 
-# 4. 프로필 수정 (닉네임, 이미지)
-@router.patch("/setting/profile")
-def update_profile(data: schemas.ProfileUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    if data.nickname is not None: current_user.nickname = data.nickname
-    if data.profile_img is not None: current_user.profile_img = data.profile_img
+# 4. 닉네임 수정
+@router.patch("/setting/nickname")
+def update_nickname(data: schemas.NicknameUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    current_user.nickname = data.nickname
     db.commit()
     db.refresh(current_user)
-    return {"status": "success", "updated_data": {"nickname": current_user.nickname, "profile_img": current_user.profile_img}}
+    return success({"nickname": current_user.nickname})
 
 # 5. 페르소나(SBTI) 결과 저장/조회
 @router.post("/setting/profile/persona")
-def update_sbti_complex(data: schemas.SbtiFinalResult, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.persona_type = json.dumps(data.model_dump(), ensure_ascii=False)
     db.commit()
     db.refresh(current_user)
@@ -414,47 +420,48 @@ def update_sbti_complex(data: schemas.SbtiFinalResult, db: Session = Depends(get
             distinct_id=str(current_user.user_id),
             event="persona_updated",
         )
-    return {"status": "success", "persona": data}
+    return success({"persona": data.model_dump()})
 
 @router.get("/profile/persona", response_model=schemas.PersonaRead)
 def get_my_persona(current_user: models.User = Depends(get_current_user)):
-    if not current_user.persona_type: return {"persona": None}
+    if not current_user.persona_type:
+        return success({"persona": None})
     try:
-        return {"persona": json.loads(current_user.persona_type)}
+        return success({"persona": json.loads(current_user.persona_type)})
     except Exception:
-        return {"persona": None}
+        return success({"persona": None})
 
-# 6. 관심 쇼핑몰 저장/조회
-@router.post("/profile/shop")
-def update_favorite_shops(data: schemas.UserShopsUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    current_user.favorite_shops = json.dumps(data.favorite_shops, ensure_ascii=False)
+# 7. 나의 취향 저장/조회
+@router.post("/profile/style")
+def update_style(data: schemas.StyleUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    current_user.style = [s.value for s in data.style]
     db.commit()
-    if posthog_client:
-        posthog_client.capture(
-            distinct_id=str(current_user.user_id),
-            event="favorite_shops_updated",
-            properties={"shop_count": len(data.favorite_shops)},
-        )
-    return {"status": "success", "favorite_shops": data.favorite_shops}
+    return success({"style": current_user.style})
 
-@router.get("/profile/shop")
-def get_favorite_shops(current_user: models.User = Depends(get_current_user)):
-    if not current_user.favorite_shops: return {"favorite_shops": []}
-    return {"favorite_shops": json.loads(current_user.favorite_shops)}
+@router.get("/profile/style")
+def get_style(current_user: models.User = Depends(get_current_user)):
+    return success({"style": current_user.style or []})
 
-# 7. 추구미 저장/조회
-@router.post("/profile/chugume")
-def update_chugume(data: schemas.ChugumeUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    current_user.chu_gu_me = data.chugume_type.value
+# 8. 온보딩
+@router.post("/initial-question")
+def submit_onboarding(data: schemas.OnboardingCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    current_user.age_group = data.age_group.value
+    current_user.style = [s.value for s in data.style]
+    current_user.regret_frequency = data.regret_frequency.value
+
+    if data.regret_frequency == schemas.RegretFrequency.NONE:
+        current_user.regret_reasons = []
+    else:
+        reasons = [r for r in (data.regret_reasons or [])]
+        if data.regret_reason_custom:
+            reasons.append(data.regret_reason_custom)
+        current_user.regret_reasons = reasons
+
     db.commit()
-    return {"status": "success", "message": f"추구미가 '{current_user.chu_gu_me}'로 설정되었습니다!"}
-    
-@router.get("/profile/chugume")
-def get_chugume(current_user: models.User = Depends(get_current_user)):
-    return {"chugume_type": current_user.chu_gu_me}
+    return success(message="온보딩이 완료되었습니다.")
 
 # 8. 나의 옷장 통계 조회
-@router.get("/profile/closet", response_model=schemas.ClosetStatsRead)
+@router.get("/profile/closet")
 def get_closet_stats(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # status 기준: PURCHASED = 고심 끝에 구매한 옷, ABANDONED = 아쉽지만 포기한 옷 (고민 중은 제외)
     base = db.query(UserProduct).outerjoin(
@@ -478,9 +485,9 @@ def get_closet_stats(db: Session = Depends(get_db), current_user: models.User = 
         if prod and prod.price is not None:
             dropped_price += int(prod.price)
 
-    return {
-        "bought_count": bought_count,
-        "bought_price": bought_price,
-        "dropped_count": dropped_count,
-        "dropped_price": dropped_price
-    }
+    return success({
+        "boughtCount": bought_count,
+        "boughtPrice": bought_price,
+        "droppedCount": dropped_count,
+        "droppedPrice": dropped_price,
+    })

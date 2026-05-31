@@ -29,6 +29,7 @@ posthog>=3.0.0
 
 # --- [Auth] ---
 google-auth==2.40.2
+httpx==0.27.0
 
 # --- [Security & Utils] ---
 python-jose[cryptography]==3.5.0

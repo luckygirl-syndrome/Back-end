@@ -15,6 +15,7 @@ from jose import jwt as jose_jwt
 from app.products.models import UserProduct, Product
 from sqlalchemy import func
 from app.core.observability import posthog_client
+from app.users.fbti_types import FBTI_TYPES
 
 router = APIRouter(prefix="/api", tags=["유저 관리"])
 api_key_header = APIKeyHeader(name="Authorization")
@@ -379,20 +380,27 @@ def apple_connect(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)
 # 7. 내 프로필 조회
 @router.get("/profile", response_model=schemas.ProfileRead)
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
-    profile_data = {
-        "nickname": current_user.nickname,
-        "profile_img": str(current_user.profile_img) if current_user.profile_img else "1",
-        "description": ""
-    }
-    
+    fbti_name = ""
+    profile_img = str(current_user.profile_img) if current_user.profile_img else "1"
+
     if current_user.persona_type:
         try:
             persona_json = json.loads(current_user.persona_type)
-            profile_data["description"] = persona_json.get("description", "")
+            fbti_code = persona_json.get("persona_type", "").upper()
+            fbti_info = FBTI_TYPES.get(fbti_code)
+            if fbti_info:
+                fbti_name = fbti_info["name"]
+                profile_img = str(fbti_info["image_index"])
         except Exception:
             pass
 
-    return profile_data
+    return {
+        "profile_data": {
+            "nickname": current_user.nickname,
+            "profile_img": profile_img,
+            "fbti_name": fbti_name,
+        }
+    }
 
 # 4. 프로필 수정 (닉네임, 이미지)
 @router.patch("/setting/profile")
@@ -405,7 +413,7 @@ def update_profile(data: schemas.ProfileUpdate, db: Session = Depends(get_db), c
 
 # 5. 페르소나(SBTI) 결과 저장/조회
 @router.post("/setting/profile/persona")
-def update_sbti_complex(data: schemas.SbtiFinalResult, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.persona_type = json.dumps(data.model_dump(), ensure_ascii=False)
     db.commit()
     db.refresh(current_user)

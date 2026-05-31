@@ -19,29 +19,29 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
-# 2. 기본 프로필 조회용 (router의 get_my_profile과 규격 맞춤)
-class ProfileRead(BaseModel):
+# 2. 기본 프로필 조회용
+class ProfileData(BaseModel):
     nickname: str
     profile_img: str
-    description: str
+    fbti_name: str
 
-    class Config:
-        from_attributes = True
+class ProfileRead(BaseModel):
+    profile_data: ProfileData
 
-# 3. SBTI/페르소나 데이터 구조
+# 3. FBTI/페르소나 데이터 구조
 class AxisScore(BaseModel):
     result: str    # "D" 또는 "N" 등
     score: int     # 0~3
 
-class SbtiFinalResult(BaseModel):
-    persona_type: str  # "DSN"
-    description: str   # "도파민 중독자"
+class FbtiFinalResult(BaseModel):
+    persona_type: str  # "DUTE" 등 4글자 코드
     d_vs_n: AxisScore
-    s_vs_a: AxisScore
-    m_vs_t: AxisScore 
+    u_vs_i: AxisScore
+    t_vs_m: AxisScore
+    e_vs_o: AxisScore
 
 class PersonaRead(BaseModel):
-    persona: Optional[SbtiFinalResult] = None
+    persona: Optional[FbtiFinalResult] = None
 
 # 3. 소셜 로그인용
 class GoogleLoginRequest(BaseModel):

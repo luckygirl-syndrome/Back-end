@@ -25,5 +25,5 @@ class UserService:
         return {
             "persona_type": user.persona_type or DEFAULT_VALUES["persona_type"],
             "frequent_malls": malls,
-            "target_style": user.chu_gu_me or DEFAULT_VALUES["target_style"]
+            "target_style": user.style or DEFAULT_VALUES["target_style"]
         }

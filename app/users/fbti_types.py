@@ -1,0 +1,18 @@
+FBTI_TYPES = {
+    "DUTE": {"name": "🐷 신나는 돼지",   "description": "쇼핑이 곧 나의 엔터테인먼트", "image_index": 1},
+    "DUTO": {"name": "🐒 호기심 많은 원숭이", "description": "유행은 따라가는 게 맞지",    "image_index": 2},
+    "DUME": {"name": "🦝 민첩한 미어캣",  "description": "어디서 샀냐는 질문이 내 쇼핑의 원동력", "image_index": 3},
+    "DUMO": {"name": "🦔 깐깐한 고슴도치", "description": "검증됐어도 내 취향 아니면 패스야", "image_index": 4},
+    "DITE": {"name": "🐱 고집 센 고양이", "description": "유행이라니까 구경은 하는데, 결제는 내 맘이야", "image_index": 5},
+    "DITO": {"name": "🦚 화려한 공작",   "description": "내가 입으면 트렌드가 돼",       "image_index": 6},
+    "DIME": {"name": "🐸 엉뚱한 개구리", "description": "남들은 몰라보는 나만의 패션 세계관", "image_index": 7},
+    "DIMO": {"name": "🦢 까다로운 백조", "description": "범접할 수 없는 안목, 옷장은 나의 컬렉션", "image_index": 8},
+    "NUTE": {"name": "🐹 부지런한 햄스터", "description": "필요한 거, 검증된 퀄리티, 제일 싸게", "image_index": 9},
+    "NUTO": {"name": "🐻 우직한 곰",     "description": "검증된 스테디템, 하나를 사도 제대로", "image_index": 10},
+    "NUME": {"name": "🐇 예리한 토끼",   "description": "남들 모를 때 이미 찾아냈어",     "image_index": 11},
+    "NUMO": {"name": "🐢 느긋한 거북이", "description": "느려도 확실하게, 10년 입을 옷만 골라", "image_index": 12},
+    "NITE": {"name": "🐆 직진하는 치타", "description": "필요한 건 망설임 없이, 오차 없는 선택", "image_index": 13},
+    "NITO": {"name": "🐿️ 꼼꼼한 다람쥐", "description": "하나를 사도 코디까지 계산하는 철저함", "image_index": 14},
+    "NIME": {"name": "🦊 영리한 여우",   "description": "진짜 꿀매는 내가 직접 발굴해",   "image_index": 15},
+    "NIMO": {"name": "🦛 여유로운 카피바라", "description": "지름신도 비껴가는 무소유의 안목", "image_index": 16},
+}

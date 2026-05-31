@@ -51,7 +51,9 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 
 origins = [
-    "https://ttobaba-d8859.web.app/",
+    "https://ttobaba-d8859.web.app",
+    "https://ttobaba.shop",
+    "https://www.ttobaba.shop",
 ]
 
 # CORS 설정

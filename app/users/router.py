@@ -293,9 +293,14 @@ def _verify_apple_token(id_token: str) -> dict:
             id_token,
             public_key,
             algorithms=["RS256"],
-            audience=[settings.APPLE_CLIENT_ID],
             issuer="https://appleid.apple.com",
+            options={"verify_aud": False},
         )
+        aud = payload.get("aud")
+        valid_aud = [aud] if isinstance(aud, str) else (aud or [])
+        if settings.APPLE_CLIENT_ID not in valid_aud:
+            logger.error(f"[애플 로그인 실패] aud 불일치: {aud} != {settings.APPLE_CLIENT_ID}")
+            raise HTTPException(status_code=401, detail="유효하지 않은 애플 토큰입니다.")
         return payload
     except JWTError as e:
         logger.error(f"[애플 로그인 실패] {e}")

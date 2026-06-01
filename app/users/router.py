@@ -294,8 +294,9 @@ def _verify_apple_token(id_token: str) -> dict:
             issuer="https://appleid.apple.com",
         )
         return payload
-    except JWTError:
-        raise HTTPException(status_code=401, detail="유효하지 않은 애플 토큰입니다.")
+    except JWTError as e:
+        logger.error(f"[애플 로그인 실패] {e}")
+        raise HTTPException(status_code=401, detail=f"유효하지 않은 애플 토큰입니다: {e}")
 
 
 # 6. 애플 로그인

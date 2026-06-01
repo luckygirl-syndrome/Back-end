@@ -310,7 +310,7 @@ def get_my_profile(current_user: models.User = Depends(get_current_user)):
     if current_user.fbti_type:
         try:
             persona_json = json.loads(current_user.fbti_type)
-            fbti_code = persona_json.get("persona_type", "").upper()
+            fbti_code = persona_json.get("fbti_type", persona_json.get("persona_type", "")).upper()
             fbti_info = FBTI_TYPES.get(fbti_code)
             if fbti_info:
                 fbti_name = fbti_info["name"]

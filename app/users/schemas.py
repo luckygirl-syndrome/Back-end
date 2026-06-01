@@ -34,7 +34,7 @@ class AxisScore(BaseModel):
     score: int     # 0~3
 
 class FbtiFinalResult(BaseModel):
-    persona_type: str  # "DUTE" 등 4글자 코드
+    fbti_type: str  # "DUTE" 등 4글자 코드
     d_vs_n: AxisScore
     u_vs_i: AxisScore
     t_vs_m: AxisScore

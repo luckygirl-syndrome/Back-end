@@ -335,7 +335,7 @@ def update_nickname(data: schemas.NicknameUpdate, db: Session = Depends(get_db),
 
 
 # FBTI 결과 저장
-@router.post("/setting/profile/fbti")
+@router.post("/profile/fbti")
 def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.fbti_type = json.dumps(data.model_dump(), ensure_ascii=False)
     db.commit()

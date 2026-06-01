@@ -346,7 +346,7 @@ def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), cu
 
 
 # FBTI 결과 조회
-@router.get("/profile/fbti", response_model=schemas.PersonaRead)
+@router.get("/profile/fbti")
 def get_my_persona(current_user: models.User = Depends(get_current_user)):
     if not current_user.fbti_type:
         return success({"fbti": None})

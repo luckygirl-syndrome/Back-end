@@ -342,18 +342,18 @@ def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), cu
     db.refresh(current_user)
     if posthog_client:
         posthog_client.capture(distinct_id=str(current_user.user_id), event="persona_updated")
-    return success({"persona": data.model_dump()})
+    return success({"fbti": data.model_dump()})
 
 
 # FBTI 결과 조회
 @router.get("/profile/fbti", response_model=schemas.PersonaRead)
 def get_my_persona(current_user: models.User = Depends(get_current_user)):
     if not current_user.fbti_type:
-        return success({"persona": None})
+        return success({"fbti": None})
     try:
-        return success({"persona": json.loads(current_user.fbti_type)})
+        return success({"fbti": json.loads(current_user.fbti_type)})
     except Exception:
-        return success({"persona": None})
+        return success({"fbti": None})
 
 
 # 나의 취향 저장/조회

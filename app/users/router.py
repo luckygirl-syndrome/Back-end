@@ -501,3 +501,23 @@ def create_inquiry(body: schemas.InquiryCreate, current_user: models.User = Depe
     db.add(inquiry)
     db.commit()
     return success(message="문의가 접수되었습니다.")
+
+
+# 비밀번호 확인
+@router.post("/setting/password/verify")
+def verify_password_endpoint(body: schemas.PasswordVerify, current_user: models.User = Depends(get_current_user)):
+    if not current_user.password:
+        raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호가 없습니다.")
+    if not verify_password(body.current_password, current_user.password):
+        raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다.")
+    return success(message="비밀번호 확인 완료.")
+
+
+# 비밀번호 변경
+@router.patch("/setting/password")
+def change_password(body: schemas.PasswordChange, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    if not current_user.password:
+        raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호가 없습니다.")
+    current_user.password = hash_password(body.new_password)
+    db.commit()
+    return success(message="비밀번호가 변경되었습니다.")

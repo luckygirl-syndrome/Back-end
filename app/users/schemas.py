@@ -123,7 +123,15 @@ class InquiryCreate(BaseModel):
     content: str
     reply_email: Optional[EmailStr] = None
 
-# 8. 비밀번호
+# 8. 소셜 연동/해제
+class SocialLinkRequest(BaseModel):
+    provider: str
+    id_token: str
+
+class SocialUnlinkRequest(BaseModel):
+    provider: str
+
+# 9. 비밀번호
 class PasswordVerify(BaseModel):
     current_password: str
 

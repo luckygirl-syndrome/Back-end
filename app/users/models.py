@@ -1,5 +1,6 @@
-from sqlalchemy import Column, Integer, String, Float, BigInteger
+from sqlalchemy import Column, Integer, String, Float, BigInteger, Text, DateTime
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.sql import func
 from app.core.database import Base
 
 class User(Base):
@@ -25,3 +26,12 @@ class User(Base):
     mu_regret = Column(JSONB, nullable=True)
     n_pos = Column(Integer, default=0)
     n_neg = Column(Integer, default=0)
+
+
+class Inquiry(Base):
+    __tablename__ = "inquiries"
+
+    id = Column(BigInteger, primary_key=True, index=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=True)
+    content = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

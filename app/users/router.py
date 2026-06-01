@@ -492,3 +492,12 @@ def get_closet_stats(db: Session = Depends(get_db), current_user: models.User = 
         "droppedCount": dropped_count,
         "droppedPrice": dropped_price,
     })
+
+
+# 문의하기
+@router.post("/profile/inquiry")
+def create_inquiry(body: schemas.InquiryCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
+    inquiry = models.Inquiry(user_id=current_user.user_id, content=body.content)
+    db.add(inquiry)
+    db.commit()
+    return success(message="문의가 접수되었습니다.")

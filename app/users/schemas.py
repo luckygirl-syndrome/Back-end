@@ -41,7 +41,7 @@ class FbtiFinalResult(BaseModel):
     e_vs_o: AxisScore
 
 class PersonaRead(BaseModel):
-    persona: Optional[FbtiFinalResult] = None
+    fbti: Optional[FbtiFinalResult] = None
 
 # 3. 소셜 로그인용
 class GoogleLoginRequest(BaseModel):

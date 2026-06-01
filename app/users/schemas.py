@@ -121,3 +121,4 @@ class ClosetStatsRead(BaseModel):
 # 7. 문의하기
 class InquiryCreate(BaseModel):
     content: str
+    reply_email: Optional[EmailStr] = None

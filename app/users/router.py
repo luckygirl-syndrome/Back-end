@@ -294,7 +294,7 @@ def _verify_apple_token(id_token: str) -> dict:
             id_token,
             public_key,
             algorithms=["RS256"],
-            audience=settings.APPLE_CLIENT_ID,
+            audience=[settings.APPLE_CLIENT_ID],
             issuer="https://appleid.apple.com",
         )
         return payload

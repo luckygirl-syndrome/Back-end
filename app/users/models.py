@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, BigInteger, Text, DateTime
+from sqlalchemy import Column, Integer, String, Float, BigInteger, Text, DateTime, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -26,6 +26,17 @@ class User(Base):
     mu_regret = Column(JSONB, nullable=True)
     n_pos = Column(Integer, default=0)
     n_neg = Column(Integer, default=0)
+
+
+class UserSocialProvider(Base):
+    __tablename__ = "user_social_providers"
+    __table_args__ = (UniqueConstraint("provider", "social_id", name="uq_provider_social_id"),)
+
+    id = Column(BigInteger, primary_key=True, autoincrement=True)
+    user_id = Column(BigInteger, nullable=False, index=True)
+    provider = Column(String(20), nullable=False)
+    social_id = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class Inquiry(Base):

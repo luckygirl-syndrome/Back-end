@@ -17,6 +17,9 @@ from sqlalchemy import func
 from app.core.observability import posthog_client
 from app.users.fbti_types import FBTI_TYPES
 from app.core.response import success
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api", tags=["유저 관리"])
 api_key_header = APIKeyHeader(name="Authorization")

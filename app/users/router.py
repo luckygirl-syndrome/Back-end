@@ -530,3 +530,12 @@ def change_password(body: schemas.PasswordChange, current_user: models.User = De
     current_user.password = hash_password(body.new_password)
     db.commit()
     return success(message="비밀번호가 변경되었습니다.")
+
+
+# 계정 정보 조회
+@router.get("/setting/account")
+def get_account(current_user: models.User = Depends(get_current_user)):
+    return success({
+        "email": current_user.email,
+        "socialProvider": current_user.social_provider,
+    })

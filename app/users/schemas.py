@@ -122,3 +122,17 @@ class ClosetStatsRead(BaseModel):
 class InquiryCreate(BaseModel):
     content: str
     reply_email: Optional[EmailStr] = None
+
+# 8. 비밀번호
+class PasswordVerify(BaseModel):
+    current_password: str
+
+class PasswordChange(BaseModel):
+    new_password: str
+
+    @field_validator("new_password")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
+        return v

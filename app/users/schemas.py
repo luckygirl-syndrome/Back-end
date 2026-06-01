@@ -117,3 +117,7 @@ class ClosetStatsRead(BaseModel):
     bought_price: int
     dropped_count: int
     dropped_price: int
+
+# 7. 문의하기
+class InquiryCreate(BaseModel):
+    content: str

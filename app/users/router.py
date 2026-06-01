@@ -335,7 +335,7 @@ def update_nickname(data: schemas.NicknameUpdate, db: Session = Depends(get_db),
 
 
 # FBTI 결과 저장
-@router.post("/setting/profile/persona")
+@router.post("/setting/profile/fbti")
 def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.persona_type = json.dumps(data.model_dump(), ensure_ascii=False)
     db.commit()
@@ -346,7 +346,7 @@ def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), cu
 
 
 # FBTI 결과 조회
-@router.get("/profile/persona", response_model=schemas.PersonaRead)
+@router.get("/profile/fbti", response_model=schemas.PersonaRead)
 def get_my_persona(current_user: models.User = Depends(get_current_user)):
     if not current_user.persona_type:
         return success({"persona": None})

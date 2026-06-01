@@ -307,9 +307,9 @@ def get_my_profile(current_user: models.User = Depends(get_current_user)):
     fbti_name = ""
     profile_img = str(current_user.profile_img) if current_user.profile_img else "1"
 
-    if current_user.persona_type:
+    if current_user.fbti_type:
         try:
-            persona_json = json.loads(current_user.persona_type)
+            persona_json = json.loads(current_user.fbti_type)
             fbti_code = persona_json.get("persona_type", "").upper()
             fbti_info = FBTI_TYPES.get(fbti_code)
             if fbti_info:
@@ -337,7 +337,7 @@ def update_nickname(data: schemas.NicknameUpdate, db: Session = Depends(get_db),
 # FBTI 결과 저장
 @router.post("/setting/profile/fbti")
 def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    current_user.persona_type = json.dumps(data.model_dump(), ensure_ascii=False)
+    current_user.fbti_type = json.dumps(data.model_dump(), ensure_ascii=False)
     db.commit()
     db.refresh(current_user)
     if posthog_client:
@@ -348,10 +348,10 @@ def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), cu
 # FBTI 결과 조회
 @router.get("/profile/fbti", response_model=schemas.PersonaRead)
 def get_my_persona(current_user: models.User = Depends(get_current_user)):
-    if not current_user.persona_type:
+    if not current_user.fbti_type:
         return success({"persona": None})
     try:
-        return success({"persona": json.loads(current_user.persona_type)})
+        return success({"persona": json.loads(current_user.fbti_type)})
     except Exception:
         return success({"persona": None})
 

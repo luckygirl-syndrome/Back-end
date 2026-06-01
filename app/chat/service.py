@@ -119,7 +119,7 @@ def save_user_profile(db: Session, user: User, profile: dict):
 
 def clean_persona_code(user):
     """프로젝트 표준 순서(1:D/N, 2:S/A, 3:M/T)에 맞춰 페르소나 코드 정렬"""
-    raw = getattr(user, 'persona_type', "DSM")
+    raw = getattr(user, 'fbti_type', None) or getattr(user, 'persona_type', "DSM")
     if isinstance(raw, dict):
         raw = raw.get('persona_type', 'DSM')
     elif isinstance(raw, str) and raw.startswith('{'):

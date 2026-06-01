@@ -23,7 +23,7 @@ class UserService:
                 malls = [user.favorite_shops]
 
         return {
-            "persona_type": user.persona_type or DEFAULT_VALUES["persona_type"],
+            "persona_type": user.fbti_type or DEFAULT_VALUES["persona_type"],
             "frequent_malls": malls,
             "target_style": user.style or DEFAULT_VALUES["target_style"]
         }

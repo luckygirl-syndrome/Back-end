@@ -50,5 +50,8 @@ class UserProduct(Base):
     prompt_data = Column(JSONB)
     feedback_text = Column(Text)
     feedback_rating = Column(Integer)
+    is_returned = Column(Boolean, nullable=True)
+    satisfaction = Column(String(50), nullable=True)
+    review = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.now)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)

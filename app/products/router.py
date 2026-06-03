@@ -26,14 +26,14 @@ async def parse_product_image(
 
 
 # 구매 후 평가 조회
-@router.get("/{product_id}/review")
+@router.get("/user-product/{user_product_id}/review")
 def get_review(
-    product_id: int,
+    user_product_id: int,
     current_user: user_models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     user_product = db.query(models.UserProduct).filter(
-        models.UserProduct.product_id == product_id,
+        models.UserProduct.user_product_id == user_product_id,
         models.UserProduct.user_id == current_user.user_id,
     ).first()
 
@@ -48,16 +48,16 @@ def get_review(
     })
 
 
-# 구매 후 평가
-@router.post("/{product_id}/review")
+# 구매 후 평가 저장
+@router.post("/user-product/{user_product_id}/review")
 def create_review(
-    product_id: int,
+    user_product_id: int,
     body: schemas.ProductReviewCreate,
     current_user: user_models.User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     user_product = db.query(models.UserProduct).filter(
-        models.UserProduct.product_id == product_id,
+        models.UserProduct.user_product_id == user_product_id,
         models.UserProduct.user_id == current_user.user_id,
         models.UserProduct.status == "PURCHASED",
     ).first()

@@ -8,6 +8,9 @@ from app.core.database import engine, Base, get_db
 
 init_sentry(dsn=settings.SENTRY_DSN, env=settings.ENV)
 from app.users.router import router as user_router
+from app.users.auth_router import router as auth_router
+from app.users.profile_router import router as profile_router
+from app.users.setting_router import router as setting_router
 from app.users import models
 from app.products import router as products_router
 from app.dashboard import home_router
@@ -23,6 +26,9 @@ app = FastAPI(title=settings.PROJECT_NAME)
 
 # 라우터 등록
 app.include_router(user_router)
+app.include_router(auth_router)
+app.include_router(profile_router)
+app.include_router(setting_router)
 app.include_router(products_router.router)
 app.include_router(chat_router)
 app.include_router(after_chat_router)

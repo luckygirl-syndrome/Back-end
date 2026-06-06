@@ -8,7 +8,7 @@ from app.core.response import success
 from app.users.models import User
 from app.users.router import get_current_user
 from app.chat import service
-from app.chat.schemas import PriceFeeling, Interest, Discovery
+from app.chat.schemas import ChatMessageRequest, PriceFeeling, Interest, Discovery
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -69,3 +69,39 @@ def get_chat_room(
     if not room:
         raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다.")
     return success(room)
+
+
+@router.post(
+    "/{user_product_id}/greet",
+    summary="첫 봇 인사 생성",
+    description="채팅방에 메시지가 없을 때 호출하면 첫 번째 봇 메시지를 생성하고 저장합니다.",
+)
+async def greet(
+    user_product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await service.generate_greeting(db, user_product_id, current_user.user_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다.")
+    return success(result)
+
+
+@router.post(
+    "/{user_product_id}/message",
+    summary="채팅 메시지 전송",
+    description="유저 메시지를 보내고 봇 답변을 받습니다. is_exit=true 시 [EXIT] 신호를 보내 최종 CODE만 반환합니다.",
+)
+async def send_message(
+    user_product_id: int,
+    body: ChatMessageRequest,
+    is_exit: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    result = await service.send_message(
+        db, user_product_id, current_user.user_id, body.message, is_exit
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다.")
+    return success(result)

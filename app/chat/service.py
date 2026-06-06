@@ -15,6 +15,19 @@ from app.chat.models import Chat
 from app.products.models import Product, UserProduct
 from app.users.models import User
 
+FIRST_TURN_TRIGGER = "대화를 시작해줘. 첫 답변 규칙에 따라 2문장으로 시작해."
+EXIT_TRIGGER = (
+    "대화가 [EXIT] 신호로 종료됩니다. "
+    "전체 대화에서 드러난 유저의 구매 판단 태도를 분석하고, "
+    "마지막 유저 발화는 최종 결정 신호로 참고하세요. "
+    "반드시 'CODE: 코드명' 형식으로만 출력하세요. 다른 말은 하지 마세요."
+)
+
+
+def _parse_code(text: str) -> Optional[str]:
+    m = re.search(r"CODE:\s*(\w+)", text)
+    return m.group(1) if m else None
+
 _processor: Optional[AllInputVisionProcessor] = None
 
 
@@ -203,4 +216,78 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
             }
             for m in messages
         ],
+    }
+
+
+def _build_history(db: Session, user_product_id: int) -> list:
+    rows = (
+        db.query(Chat)
+        .filter(Chat.user_product_id == user_product_id)
+        .order_by(Chat.created_at.asc())
+        .all()
+    )
+    return [{"role": r.role, "content": r.content} for r in rows]
+
+
+def _save_message(db: Session, user_id: int, user_product_id: int, role: str, content: str) -> None:
+    db.add(Chat(user_id=user_id, user_product_id=user_product_id, role=role, content=content))
+    db.commit()
+
+
+async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> Optional[dict]:
+    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
+
+    up = (
+        db.query(UserProduct)
+        .filter(UserProduct.user_product_id == user_product_id, UserProduct.user_id == user_id)
+        .first()
+    )
+    if not up or not up.prompt_data:
+        return None
+
+    system_prompt = build_system_prompt(up.prompt_data)
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": FIRST_TURN_TRIGGER},
+    ]
+
+    reply = await asyncio.to_thread(call_deepseek, messages)
+    _save_message(db, user_id, user_product_id, "assistant", reply)
+    return {"reply": reply, "is_exit": False, "final_code": None}
+
+
+async def send_message(
+    db: Session, user_product_id: int, user_id: int, message: str, is_exit: bool = False
+) -> Optional[dict]:
+    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
+
+    up = (
+        db.query(UserProduct)
+        .filter(UserProduct.user_product_id == user_product_id, UserProduct.user_id == user_id)
+        .first()
+    )
+    if not up or not up.prompt_data:
+        return None
+
+    system_prompt = build_system_prompt(up.prompt_data)
+    history = _build_history(db, user_product_id)
+
+    if is_exit:
+        user_content = EXIT_TRIGGER
+    else:
+        user_content = message
+        _save_message(db, user_id, user_product_id, "user", message)
+
+    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": user_content}]
+
+    reply = await asyncio.to_thread(call_deepseek, messages)
+
+    final_code = _parse_code(reply)
+    if not is_exit:
+        _save_message(db, user_id, user_product_id, "assistant", reply)
+
+    return {
+        "reply": reply,
+        "is_exit": is_exit or final_code is not None,
+        "final_code": final_code,
     }

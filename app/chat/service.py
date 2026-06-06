@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import functools
 import json
 import re
@@ -110,14 +111,18 @@ async def analyze_and_create_session(
     tmp_out_dir = Path(tempfile.mkdtemp())
 
     try:
-        # 이미지 임시 저장 (async 컨텍스트에서)
+        # 이미지 임시 저장 + base64 인코딩
         image_paths = []
+        image_b64_list = []
         for i, img in enumerate(images):
             content = await img.read()
             suffix = Path(img.filename or "image.jpg").suffix or ".jpg"
+            mime = {"jpg": "image/jpeg", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", ".webp": "image/webp"}.get(suffix, "image/jpeg")
             path = tmp_img_dir / f"img_{i}{suffix}"
             path.write_bytes(content)
             image_paths.append(path)
+            b64 = base64.b64encode(content).decode("utf-8")
+            image_b64_list.append(f"data:{mime};base64,{b64}")
 
         # Gemini 호출은 동기 함수라 스레드풀에서 실행
         run_fn = functools.partial(
@@ -148,6 +153,7 @@ async def analyze_and_create_session(
         product_name=product_name,
         price=price,
         discount_rate=discount_rate,
+        product_img=json.dumps(image_b64_list, ensure_ascii=False),
     )
     db.add(product)
     db.flush()
@@ -187,10 +193,17 @@ def get_chat_list(db: Session, user_id: int) -> List[dict]:
     items = []
     for up in user_products:
         product = db.query(Product).filter(Product.product_id == up.product_id).first()
+        raw_img = product.product_img if product else None
+        try:
+            img_list = json.loads(raw_img) if raw_img else []
+            thumbnail = img_list[0] if img_list else None
+        except Exception:
+            thumbnail = raw_img
+
         items.append({
             "user_product_id": up.user_product_id,
             "product_name": product.product_name if product else "알 수 없음",
-            "product_img": product.product_img if product else None,
+            "product_img": thumbnail,
             "price": product.price if product else 0,
             "status": up.status,
             "statusLabel": _STATUS_LABEL.get(up.status or "", "고민 중"),

@@ -12,8 +12,15 @@ from app.core.observability import posthog_client
 
 router = APIRouter(prefix="/api/chat/after", tags=["After Chat"])
 
+_200 = lambda result: {"200": {"content": {"application/json": {"example": {"isSuccess": True, "code": "200", "message": "OK", "result": result}}}}}
 
-@router.post("/purchase")
+
+@router.post(
+    "/purchase",
+    summary="구매 여부 업데이트",
+    description="채팅 종료 후 실제 구매 또는 포기 여부를 업데이트합니다.",
+    responses=_200({"status": "success", "message": "성공적으로 구매 확정되었습니다."}),
+)
 def update_purchase(
     request: schemas.PurchaseStatusRequest,
     current_user: models.User = Depends(get_current_user),
@@ -40,7 +47,12 @@ def update_purchase(
         raise HTTPException(status_code=500, detail="구매 여부 업데이트에 실패했습니다.")
 
 
-@router.post("/feedback")
+@router.post(
+    "/feedback",
+    summary="2주 후 피드백 제출",
+    description="구매 2주 후 만족도 피드백을 저장합니다.",
+    responses=_200({"status": "success", "message": "피드백이 성공적으로 저장되었습니다."}),
+)
 def submit_feedback(
     request: schemas.FeedbackSubmitRequest,
     current_user: models.User = Depends(get_current_user),

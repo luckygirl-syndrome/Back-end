@@ -15,6 +15,27 @@ from app.chat.models import Chat
 from app.products.models import Product, UserProduct
 from app.users.models import User
 
+_STATUS_LABEL = {
+    "PURCHASED": "구매 완료",
+    "ABANDONED": "구매 포기",
+    "PENDING": "고민 중",
+}
+
+_CODE_ADJUSTMENT = {
+    "BUY_CONFIDENT_GROUNDED": 10,
+    "BUY_CONDITIONALLY_READY": 5,
+    "NEUTRAL_EXPLORING": 0,
+    "HOLD_REASONABLE": -5,
+    "IMPULSE_JUSTIFICATION": -10,
+    "LOW_USE_CLARITY": -10,
+}
+
+
+def _calc_final_score(impulse_score: int, match_score: int, final_code: str) -> int:
+    adjustment = _CODE_ADJUSTMENT.get(final_code, 0)
+    raw = (match_score - impulse_score) / 2 + adjustment
+    return max(0, min(100, round((raw + 60) / 120 * 100)))
+
 FIRST_TURN_TRIGGER = "대화를 시작해줘. 첫 답변 규칙에 따라 2문장으로 시작해."
 EXIT_TRIGGER = (
     "대화가 [EXIT] 신호로 종료됩니다. "
@@ -172,6 +193,7 @@ def get_chat_list(db: Session, user_id: int) -> List[dict]:
             "product_img": product.product_img if product else None,
             "price": product.price if product else 0,
             "status": up.status,
+            "statusLabel": _STATUS_LABEL.get(up.status or "", "고민 중"),
             "impulse_score": up.impulse_score,
             "match_score": up.preference_score,
             "requested_at": up.requested_at.isoformat() if up.requested_at else None,
@@ -205,6 +227,10 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
         "product_name": product.product_name if product else "알 수 없음",
         "product_img": product.product_img if product else None,
         "status": up.status,
+        "statusLabel": _STATUS_LABEL.get(up.status or "", "고민 중"),
+        "isChatEnded": up.final_code is not None,
+        "finalCode": up.final_code,
+        "finalScore": up.final_score,
         "impulse_score": up.impulse_score,
         "match_score": up.preference_score,
         "prompt_data": up.prompt_data,
@@ -245,6 +271,11 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
     if not up or not up.prompt_data:
         return None
 
+    # 이미 메시지가 있으면 중복 생성 방지
+    existing = db.query(Chat).filter(Chat.user_product_id == user_product_id).first()
+    if existing:
+        return {"reply": existing.content, "is_exit": False, "final_code": None}
+
     system_prompt = build_system_prompt(up.prompt_data)
     messages = [
         {"role": "system", "content": system_prompt},
@@ -283,11 +314,22 @@ async def send_message(
     reply = await asyncio.to_thread(call_deepseek, messages)
 
     final_code = _parse_code(reply)
-    if not is_exit:
+
+    if is_exit:
+        up.final_code = final_code
+        if final_code:
+            up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
+        db.commit()
+    else:
         _save_message(db, user_id, user_product_id, "assistant", reply)
+        if final_code:
+            up.final_code = final_code
+            up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
+            db.commit()
 
     return {
         "reply": reply,
         "is_exit": is_exit or final_code is not None,
-        "final_code": final_code,
+        "finalCode": final_code,
+        "finalScore": up.final_score,
     }

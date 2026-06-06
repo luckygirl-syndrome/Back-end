@@ -24,31 +24,6 @@ def call_deepseek(messages: list) -> str:
     resp = _get_client().chat.completions.create(model=MODEL_NAME, messages=messages)
     return resp.choices[0].message.content
 
-INPUT_JSON = {
-    "product_info": [
-        "상품명: Healing Off-Shoulder Tee Baby Blue",
-        "가격: 65,000원 → 45,500원 (30% 할인)",
-        "상품 스타일: 베이비 블루 색상의 얇고 가벼운 코튼 소재 티셔츠로, 오프숄더 넥라인과 루즈한 핏이 돋보입니다. 전면에 레터링과 빈티지한 그래픽 프린트가 더해져 힙하고 캐주얼한 무드를 자아냅니다."
-    ],
-    "confirmed_sentences": [
-        "이 유저는 락시크, 모리걸, 스트릿 스타일을 좋아하는 유저입니다. 루즈한 실루엣과 빈티지한 그래픽 디테일이 회원의 스트릿 스타일 선호와 잘 맞습니다. 락시크나 모리걸 스타일과는 거리가 있으나, 특유의 힙한 무드가 스트릿 무드와 잘 어우러집니다.",
-        "직접 검색해서 찾아낸 상품으로, 약 1주일 전부터 관심을 두고 있는 상태입니다.",
-        "65,000원짜리 상품이 30% 할인되어 45,500원에 판매 중입니다. 충동 구매 자극이 강한 구간입니다. 유저는 이 가격이 다소 비싸다고 느끼고 있습니다.",
-        "리뷰 수는 8개입니다. 평점은 4.9점으로 매우 높습니다.",
-        "이 상품이 유저에게 주는 충동 점수는 54점이고 유저의 취향과 일치하는 점수는 74점입니다."
-    ],
-    "user_type": {
-        "code": "DIMO",
-        "axis_summary": [
-            "[확신 방식/I] 외부 평가보다 자기 기준으로 상품을 분석해 확신을 얻는다. 소재, 핏, 디테일, 마감, 활용도, 기존 옷장과의 조합처럼 제품 자체 정보를 중요하게 본다.",
-            "[스타일 방향/M] 흔한 유행보다 자기 취향이 드러나는 차별화된 스타일에 끌린다. 희소성, 독특한 디테일, 덜 알려진 브랜드, 남들과 겹치지 않는 무드를 중요하게 본다.",
-            "[가격 해석 방식/O] 할인 여부보다 물건 자체의 품질, 디자인 완성도, 활용성, 오래 입을 가치를 더 중요하게 본다. 가격은 제품 가치가 납득되는지 확인하는 보조 기준이다.",
-            "[구매 동기 참고/D] 필요성보다 감정적 끌림과 즉각적 매력을 더 크게 느끼는 편이다. 단, 상품 피쳐 판단에서는 보조 정보로만 사용한다."
-        ],
-        "priority_rule": "상품 판단 시 I(확신 방식)와 M(스타일 방향)를 동등한 최우선으로 보고, O(가격 해석 방식)는 보조 기준, D(구매 동기 참고)는 대화 톤 참고용으로만 사용한다."
-    }
-}
-
 
 def build_system_prompt(data: dict) -> str:
     product_info   = "\n".join(f"- {x}" for x in data["product_info"])
@@ -340,8 +315,6 @@ CODE: 코드명
 """.strip()
 
 
-SYSTEM_PROMPT = build_system_prompt(INPUT_JSON)
-
 # ── 유틸 ────────────────────────────────────────────────────────────────────
 
 DIVIDER      = "─" * 60
@@ -367,7 +340,7 @@ def main():
     print("  종료하려면 'q' 또는 'quit' 입력.")
     print(f"{DIVIDER}\n")
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    messages = [{"role": "system", "content": "(터미널 테스트용: 실제 실행 시 build_system_prompt(data)로 교체)"}]
     turn = 0
     total_elapsed = 0.0
 

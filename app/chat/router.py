@@ -8,6 +8,7 @@ from app.core.response import success
 from app.users.models import User
 from app.users.router import get_current_user
 from app.chat import service
+from app.chat.schemas import PriceFeeling, Interest, Discovery
 
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
@@ -22,9 +23,9 @@ router = APIRouter(prefix="/api/chat", tags=["chat"])
 )
 async def start_chat(
     images: List[UploadFile] = File(..., description="상품 스크린샷 (1장 이상)"),
-    price_feeling: str = Form(..., description="가격 체감 (예: '이 정도면 괜찮아요')"),
-    interest: str = Form(..., description="관심 지속 기간 (예: '2~3일 됐어요')"),
-    discovery: str = Form(..., description="발견 경로 (예: '인스타/틱톡/X 같은 SNS 보다가 발견했어요')"),
+    price_feeling: PriceFeeling = Form(...),
+    interest: Interest = Form(...),
+    discovery: Discovery = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -32,9 +33,9 @@ async def start_chat(
         db=db,
         images=images,
         user=current_user,
-        price_feeling=price_feeling,
-        interest=interest,
-        discovery=discovery,
+        price_feeling=price_feeling.value,
+        interest=interest.value,
+        discovery=discovery.value,
     )
     if not result:
         raise HTTPException(status_code=500, detail="이미지 분석에 실패했습니다.")

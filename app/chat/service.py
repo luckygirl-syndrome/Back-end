@@ -181,7 +181,8 @@ async def analyze_and_create_session(
         "user_type": result.get("user_type", {}),
         "impulse_score": impulse_score,
         "match_score": match_score,
-        "product_img": image_b64_list,
+        "product_img": image_b64_list[0] if image_b64_list else None,
+        "product_imgs": image_b64_list,
     }
 
 

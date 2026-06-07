@@ -50,6 +50,7 @@ class UserProduct(Base):
     prompt_data = Column(JSONB)
     feedback_text = Column(Text)
     feedback_rating = Column(Integer)
+    final_code = Column(String(50), nullable=True)
     is_returned = Column(Boolean, nullable=True)
     satisfaction = Column(String(50), nullable=True)
     review = Column(Text, nullable=True)

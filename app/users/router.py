@@ -24,6 +24,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api", tags=["유저 관리"])
 api_key_header = APIKeyHeader(name="Authorization")
 
+_200 = lambda result: {"200": {"content": {"application/json": {"example": {"isSuccess": True, "code": "200", "message": "OK", "result": result}}}}}
+
 
 # 인증 함수
 def get_current_user(token: str = Depends(api_key_header), db: Session = Depends(get_db)):
@@ -162,7 +164,7 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
 # ── 인증 엔드포인트 ───────────────────────────────────────────────
 
 # 1. 회원가입
-@router.post("/auth/signup")
+@router.post("/auth/signup", summary="이메일 회원가입", responses=_200({"userId": 1, "email": "user@example.com", "nickname": "또바바"}))
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
@@ -183,7 +185,7 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 
 
 # 2. 로그인
-@router.post("/auth/login")
+@router.post("/auth/login", summary="이메일 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer"}))
 def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     user = db.query(models.User).filter(models.User.email == user_data.email).first()
     if not user or not verify_password(user_data.password, user.password):
@@ -195,7 +197,7 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
 
 
 # 3. 구글 로그인
-@router.post("/auth/google")
+@router.post("/auth/google", summary="구글 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False}))
 def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)):
     payload = _verify_google_token(body.id_token)
     info = _extract_social_info("google", payload)
@@ -215,7 +217,7 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
 
 
 # 4. 카카오 로그인
-@router.post("/auth/kakao")
+@router.post("/auth/kakao", summary="카카오 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False}))
 def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
     payload = _verify_kakao_token(body.id_token)
     info = _extract_social_info("kakao", payload)
@@ -234,7 +236,7 @@ def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
 
 
 # 5. 애플 로그인
-@router.post("/auth/apple")
+@router.post("/auth/apple", summary="애플 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False}))
 def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
     payload = _verify_apple_token(body.id_token)
     info = _extract_social_info("apple", payload)
@@ -254,7 +256,7 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
 # ── 소셜 연동/해제 ────────────────────────────────────────────────
 
 # 소셜 계정 연동
-@router.post("/setting/social/link")
+@router.post("/setting/social/link", summary="소셜 계정 연동", responses=_200(None))
 def link_social(body: schemas.SocialLinkRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     already = db.query(models.UserSocialProvider).filter_by(
         user_id=current_user.user_id, provider=body.provider
@@ -280,7 +282,7 @@ def link_social(body: schemas.SocialLinkRequest, current_user: models.User = Dep
 
 
 # 소셜 계정 해제
-@router.delete("/setting/social/unlink")
+@router.delete("/setting/social/unlink", summary="소셜 계정 해제", responses=_200(None))
 def unlink_social(body: schemas.SocialUnlinkRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     providers = db.query(models.UserSocialProvider).filter_by(user_id=current_user.user_id).all()
     has_password = bool(current_user.password)
@@ -302,7 +304,7 @@ def unlink_social(body: schemas.SocialUnlinkRequest, current_user: models.User =
 # ── 프로필 ────────────────────────────────────────────────────────
 
 # 내 프로필 조회
-@router.get("/profile")
+@router.get("/profile", summary="내 프로필 조회", responses=_200({"nickname": "또바바", "profileImg": "3", "fbtiName": "도파민 쇼퍼"}))
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
     fbti_name = ""
     profile_img = str(current_user.profile_img) if current_user.profile_img else "1"
@@ -326,7 +328,7 @@ def get_my_profile(current_user: models.User = Depends(get_current_user)):
 
 
 # 닉네임 수정
-@router.patch("/setting/nickname")
+@router.patch("/setting/nickname", summary="닉네임 수정", responses=_200({"nickname": "새닉네임"}))
 def update_nickname(data: schemas.NicknameUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.nickname = data.nickname
     db.commit()
@@ -335,7 +337,7 @@ def update_nickname(data: schemas.NicknameUpdate, db: Session = Depends(get_db),
 
 
 # FBTI 결과 저장
-@router.post("/profile/fbti")
+@router.post("/profile/fbti", summary="FBTI 결과 저장", responses=_200({"fbti": {"fbti_type": "DIMO"}}))
 def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.fbti_type = json.dumps(data.model_dump(), ensure_ascii=False)
     db.commit()
@@ -346,7 +348,7 @@ def update_fbti(data: schemas.FbtiFinalResult, db: Session = Depends(get_db), cu
 
 
 # FBTI 결과 조회
-@router.get("/profile/fbti")
+@router.get("/profile/fbti", summary="FBTI 결과 조회", responses=_200({"fbti": {"fbti_type": "DIMO"}}))
 def get_my_persona(current_user: models.User = Depends(get_current_user)):
     if not current_user.fbti_type:
         return success({"fbti": None})
@@ -357,20 +359,20 @@ def get_my_persona(current_user: models.User = Depends(get_current_user)):
 
 
 # 나의 취향 저장/조회
-@router.post("/profile/style")
+@router.post("/profile/style", summary="스타일 저장", responses=_200({"style": ["스트릿", "캐주얼"]}))
 def update_style(data: schemas.StyleUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.style = [s.value for s in data.style]
     db.commit()
     return success({"style": current_user.style})
 
 
-@router.get("/profile/style")
+@router.get("/profile/style", summary="스타일 조회", responses=_200({"style": ["스트릿", "캐주얼"]}))
 def get_style(current_user: models.User = Depends(get_current_user)):
     return success({"style": current_user.style or []})
 
 
 # 온보딩
-@router.post("/initial-question")
+@router.post("/initial-question", summary="온보딩 응답 저장", responses=_200(None))
 def submit_onboarding(data: schemas.OnboardingCreate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     current_user.age_group = data.age_group.value
     current_user.style = [s.value for s in data.style]
@@ -387,7 +389,7 @@ def submit_onboarding(data: schemas.OnboardingCreate, db: Session = Depends(get_
 
 
 # 나의 옷장 통계
-@router.get("/profile/closet")
+@router.get("/profile/closet", summary="나의 옷장 통계", responses=_200({"boughtCount": 5, "boughtPrice": 230000, "droppedCount": 3, "droppedPrice": 120000}))
 def get_closet_stats(db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     base = db.query(UserProduct).outerjoin(
         Product, UserProduct.product_id == Product.product_id
@@ -418,7 +420,7 @@ def get_closet_stats(db: Session = Depends(get_db), current_user: models.User = 
 # ── 설정 ──────────────────────────────────────────────────────────
 
 # 계정 정보 조회
-@router.get("/setting/account")
+@router.get("/setting/account", summary="계정 정보 조회", responses=_200({"email": "user@example.com", "socialProviders": ["google"], "hasPassword": False}))
 def get_account(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     providers = db.query(models.UserSocialProvider).filter_by(user_id=current_user.user_id).all()
     provider_list = [p.provider for p in providers]
@@ -433,7 +435,7 @@ def get_account(current_user: models.User = Depends(get_current_user), db: Sessi
 
 
 # 문의하기
-@router.post("/setting/inquiry")
+@router.post("/setting/inquiry", summary="문의하기", responses=_200(None))
 def create_inquiry(body: schemas.InquiryCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     inquiry = models.Inquiry(user_id=current_user.user_id, content=body.content, reply_email=body.reply_email)
     db.add(inquiry)
@@ -442,7 +444,7 @@ def create_inquiry(body: schemas.InquiryCreate, current_user: models.User = Depe
 
 
 # 비밀번호 확인
-@router.post("/setting/password/verify")
+@router.post("/setting/password/verify", summary="현재 비밀번호 확인", responses=_200(None))
 def verify_password_endpoint(body: schemas.PasswordVerify, current_user: models.User = Depends(get_current_user)):
     if not current_user.password:
         raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호가 없습니다.")
@@ -452,7 +454,7 @@ def verify_password_endpoint(body: schemas.PasswordVerify, current_user: models.
 
 
 # 비밀번호 변경
-@router.patch("/setting/password")
+@router.patch("/setting/password", summary="비밀번호 변경", responses=_200(None))
 def change_password(body: schemas.PasswordChange, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     if not current_user.password:
         raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호가 없습니다.")

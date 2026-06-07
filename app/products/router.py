@@ -1,32 +1,22 @@
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.users.router import get_current_user
-from app.products.parsers.item_parser import extract_features_from_image
 from app.products import models, schemas
 from app.users import models as user_models
 from app.core.response import success
 
 router = APIRouter(prefix="/api/products", tags=["상품 분석"])
 
-
-@router.post("/parse")
-async def parse_product_image(
-    file: UploadFile = File(...),
-    current_user: dict = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    image_bytes = await file.read()
-    result = extract_features_from_image(image_bytes)
-
-    if not result or result.get("product_name") == "Error":
-        raise HTTPException(status_code=400, detail=result.get("details", "분석 실패"))
-
-    return {"status": "success", "data": result}
+_200 = lambda result: {"200": {"content": {"application/json": {"example": {"isSuccess": True, "code": "200", "message": "OK", "result": result}}}}}
 
 
 # 구매 후 평가 조회
-@router.get("/user-product/{user_product_id}/review")
+@router.get(
+    "/user-product/{user_product_id}/review",
+    summary="구매 후 평가 조회",
+    responses=_200({"isReturned": False, "satisfaction": "satisfied", "review": "생각보다 훨씬 좋아요!", "status": "PURCHASED"}),
+)
 def get_review(
     user_product_id: int,
     current_user: user_models.User = Depends(get_current_user),
@@ -49,7 +39,11 @@ def get_review(
 
 
 # 구매 후 평가 저장
-@router.post("/user-product/{user_product_id}/review")
+@router.post(
+    "/user-product/{user_product_id}/review",
+    summary="구매 후 평가 저장",
+    responses=_200(None),
+)
 def create_review(
     user_product_id: int,
     body: schemas.ProductReviewCreate,

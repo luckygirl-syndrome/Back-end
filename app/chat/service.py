@@ -336,23 +336,24 @@ async def send_message(
 
     reply = await asyncio.to_thread(call_deepseek, messages)
 
-    final_code = _parse_code(reply)
-
     if is_exit:
+        final_code = _parse_code(reply)
         up.final_code = final_code
         if final_code:
             up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
         db.commit()
+        return {
+            "reply": None,
+            "is_exit": True,
+            "finalCode": final_code,
+            "finalScore": up.final_score,
+        }
     else:
         _save_message(db, user_id, user_product_id, "assistant", reply)
-        if final_code:
-            up.final_code = final_code
-            up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
-            db.commit()
-
-    return {
-        "reply": reply,
-        "is_exit": is_exit or final_code is not None,
-        "finalCode": final_code,
-        "finalScore": up.final_score,
-    }
+        db.commit()
+        return {
+            "reply": reply,
+            "is_exit": False,
+            "finalCode": None,
+            "finalScore": None,
+        }

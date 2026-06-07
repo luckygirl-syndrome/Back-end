@@ -28,7 +28,8 @@ _200 = lambda result: {"200": {"content": {"application/json": {"example": {"isS
         "user_type": {"code": "DIMO", "axis_summary": ["[확신 방식/I] ..."], "priority_rule": "..."},
         "impulse_score": 54,
         "match_score": 74,
-        "product_img": ["data:image/jpeg;base64,..."],
+        "product_img": "data:image/jpeg;base64,...",
+        "product_imgs": ["data:image/jpeg;base64,...", "data:image/jpeg;base64,..."],
     }),
 )
 async def start_chat(

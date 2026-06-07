@@ -349,11 +349,19 @@ async def send_message(
             "finalScore": up.final_score,
         }
     else:
-        _save_message(db, user_id, user_product_id, "assistant", reply)
+        final_code = _parse_code(reply)
+        clean_reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
+
+        _save_message(db, user_id, user_product_id, "assistant", clean_reply)
+
+        if final_code:
+            up.final_code = final_code
+            up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
         db.commit()
+
         return {
-            "reply": reply,
-            "is_exit": False,
-            "finalCode": None,
-            "finalScore": None,
+            "reply": clean_reply,
+            "is_exit": final_code is not None,
+            "finalCode": final_code,
+            "finalScore": up.final_score if final_code else None,
         }

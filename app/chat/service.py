@@ -339,9 +339,12 @@ async def send_message(
 
     if is_exit:
         final_code = _parse_code(reply)
+        import logging as _logging
+        _logging.getLogger(__name__).info(f"[EXIT] LLM raw reply: {repr(reply)} | parsed code: {final_code}")
+        if not final_code:
+            final_code = "NEUTRAL_EXPLORING"
         up.final_code = final_code
-        if final_code:
-            up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
+        up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
         db.commit()
         return {
             "reply": None,

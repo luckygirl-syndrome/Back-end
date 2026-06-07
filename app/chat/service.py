@@ -312,7 +312,7 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
 
 
 async def send_message(
-    db: Session, user_product_id: int, user_id: int, message: str, is_exit: bool = False
+    db: Session, user_product_id: int, user_id: int, message: str
 ) -> Optional[dict]:
     from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
 
@@ -327,45 +327,58 @@ async def send_message(
     system_prompt = build_system_prompt(up.prompt_data)
     history = _build_history(db, user_product_id)
 
-    if is_exit:
-        user_content = EXIT_TRIGGER
-    else:
-        user_content = message
-        _save_message(db, user_id, user_product_id, "user", message)
-
-    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": user_content}]
+    _save_message(db, user_id, user_product_id, "user", message)
+    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": message}]
 
     reply = await asyncio.to_thread(call_deepseek, messages)
 
-    if is_exit:
-        final_code = _parse_code(reply)
-        import logging as _logging
-        _logging.getLogger(__name__).info(f"[EXIT] LLM raw reply: {repr(reply)} | parsed code: {final_code}")
-        if not final_code:
-            final_code = "NEUTRAL_EXPLORING"
+    final_code = _parse_code(reply)
+    clean_reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
+
+    _save_message(db, user_id, user_product_id, "assistant", clean_reply)
+
+    if final_code:
         up.final_code = final_code
         up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
-        db.commit()
-        return {
-            "reply": None,
-            "is_exit": True,
-            "finalCode": final_code,
-            "finalScore": up.final_score,
-        }
-    else:
-        final_code = _parse_code(reply)
-        clean_reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
+    db.commit()
 
-        _save_message(db, user_id, user_product_id, "assistant", clean_reply)
+    return {
+        "reply": clean_reply,
+        "is_exit": final_code is not None,
+        "finalCode": final_code,
+        "finalScore": up.final_score if final_code else None,
+    }
 
-        if final_code:
-            up.final_code = final_code
-            up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
-        db.commit()
 
-        return {
-            "reply": clean_reply,
-            "is_exit": final_code is not None,
-            "finalCode": final_code,
-            "finalScore": up.final_score if final_code else None,
-        }
+async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional[dict]:
+    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
+    import logging as _logging
+
+    up = (
+        db.query(UserProduct)
+        .filter(UserProduct.user_product_id == user_product_id, UserProduct.user_id == user_id)
+        .first()
+    )
+    if not up or not up.prompt_data:
+        return None
+
+    system_prompt = build_system_prompt(up.prompt_data)
+    history = _build_history(db, user_product_id)
+    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": EXIT_TRIGGER}]
+
+    reply = await asyncio.to_thread(call_deepseek, messages)
+
+    final_code = _parse_code(reply)
+    _logging.getLogger(__name__).info(f"[EXIT] raw reply: {repr(reply)} | parsed code: {final_code}")
+
+    if not final_code:
+        final_code = "NEUTRAL_EXPLORING"
+
+    up.final_code = final_code
+    up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
+    db.commit()
+
+    return {
+        "finalCode": final_code,
+        "finalScore": up.final_score,
+    }

@@ -21,7 +21,7 @@ def _get_client() -> OpenAI:
 
 
 def call_deepseek(messages: list) -> str:
-    resp = _get_client().chat.completions.create(model=MODEL_NAME, messages=messages)
+    resp = _get_client().chat.completions.create(model=MODEL_NAME, messages=messages, max_tokens=1024)
     return resp.choices[0].message.content
 
 

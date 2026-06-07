@@ -179,6 +179,7 @@ async def analyze_and_create_session(
         "user_type": result.get("user_type", {}),
         "impulse_score": impulse_score,
         "match_score": match_score,
+        "product_img": image_b64_list,
     }
 
 
@@ -235,10 +236,16 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
         .all()
     )
 
+    raw_img = product.product_img if product else None
+    try:
+        img_list = json.loads(raw_img) if raw_img else []
+    except Exception:
+        img_list = [raw_img] if raw_img else []
+
     return {
         "user_product_id": up.user_product_id,
         "product_name": product.product_name if product else "알 수 없음",
-        "product_img": product.product_img if product else None,
+        "product_img": img_list,
         "status": up.status,
         "statusLabel": _STATUS_LABEL.get(up.status or "", "고민 중"),
         "isChatEnded": up.final_code is not None,

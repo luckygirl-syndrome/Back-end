@@ -174,6 +174,8 @@ async def analyze_and_create_session(
 
     return {
         "user_product_id": user_product.user_product_id,
+        "product_name": product_name,
+        "price": price,
         "product_info": result.get("product_info", []),
         "confirmed_sentences": result.get("confirmed_sentences", []),
         "user_type": result.get("user_type", {}),
@@ -245,6 +247,7 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
     return {
         "user_product_id": up.user_product_id,
         "product_name": product.product_name if product else "알 수 없음",
+        "price": product.price if product else 0,
         "product_img": img_list,
         "status": up.status,
         "statusLabel": _STATUS_LABEL.get(up.status or "", "고민 중"),

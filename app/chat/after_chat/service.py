@@ -3,13 +3,7 @@ from datetime import datetime, timedelta
 from app.products.models import UserProduct
 from app.users.models import User
 from app.chat.after_chat import schemas
-import json
-import numpy as np  # 이 줄을 추가하세요!
-from app.products.models import Product  # 또는 프로젝트 구조에 맞는 경로
-
-# 🚩 [추가] 선호도 프로필 업데이트용 임포트
-from app.chat.service import load_user_profile, save_user_profile
-from app.chat.logic.final_prefer import update_profile
+from app.products.models import Product
 
 def update_purchase_status(db: Session, user_id: int, req: schemas.PurchaseStatusRequest) -> schemas.PurchaseStatusResponse:
     """사용자가 실제로 구매했는지 여부 기록하기"""
@@ -68,50 +62,6 @@ def submit_feedback(db: Session, user_id: int, req: schemas.FeedbackSubmitReques
     if req.rating is not None:
         up.feedback_rating = req.rating
         
-        # 🚩 [추가] 피드백 점수에 따라 유저 취향 프로필(mu_like, mu_regret) 업데이트
-        # 만족(3, 4점) -> mu_like 업데이트 // 불만족(1, 2점) -> mu_regret 업데이트
-        try:
-            user = db.query(User).filter(User.user_id == user_id).first()
-            product = db.query(Product).filter(Product.product_id == up.product_id).first()
-            
-            if user and product:
-                # DB Product 컬럼에서 직접 피처 추출 (prompt_data보다 더 정확함)
-                item_json = {
-                    "discount_rate": product.discount_rate,
-                    "review_score": product.review_score,
-                    "review_count": product.review_count,
-                    "product_likes": product.product_likes,
-                    "platform": product.platform,
-                    "is_direct_shipping": product.is_direct_shipping,
-                    "free_shipping": product.free_shipping,
-                    "sim_trend_hype": product.sim_trend_hype,
-                    "sim_temptation": product.sim_temptation,
-                    "sim_fit_anxiety": product.sim_fit_anxiety,
-                    "sim_quality_logic": product.sim_quality_logic,
-                    "sim_bundle": product.sim_bundle,
-                    "sim_confidence": product.sim_confidence
-                }
-                
-                label = None
-                if req.rating >= 3: label = "positive"
-                elif req.rating <= 2: label = "negative"
-                
-                if label:
-                    profile = load_user_profile(user)
-                    new_profile = update_profile(profile, item_json, label)
-                    save_user_profile(db, user, new_profile)
-                    
-                    # 🚩 [추가] 터미널 디버깅 로그
-                    print("\n" + "✨" * 40)
-                    print(f" ✅ [PROFILE UPDATE] USER: {user_id} | RATING: {req.rating} -> LABEL: {label}")
-                    print(f" - n_pos: {new_profile['n_pos']} | n_neg: {new_profile['n_neg']}")
-                    print(f" - mu_like   (avg): {np.mean(new_profile['mu_like']):.4f}")
-                    print(f" - mu_regret (avg): {np.mean(new_profile['mu_regret']):.4f}")
-                    print(f" - mu_like   (raw): {new_profile['mu_like'].tolist()}")
-                    print(f" - mu_regret (raw): {new_profile['mu_regret'].tolist()}")
-                    print("✨" * 40 + "\n")
-        except Exception as e:
-            print(f"Warning: Failed to update user profile from feedback: {e}")
 
     db.commit()
 

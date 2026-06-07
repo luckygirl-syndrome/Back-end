@@ -1,6 +1,32 @@
+from enum import Enum
+
 from pydantic import BaseModel, Field
 from typing import List, Optional
 from datetime import datetime
+
+
+class PriceFeeling(str, Enum):
+    cheap = "저렴한 것 같아요"
+    okay = "이 정도면 괜찮아요"
+    pricey = "좀 비싸긴 한데 못 살 정도는 아니에요"
+    too_expensive = "상품은 마음에 들지만 가격이 비싸요"
+
+
+class Interest(str, Enum):
+    today = "오늘 처음 봤어요"
+    few_days = "2~3일 됐어요"
+    a_week = "1주일 정도 됐어요"
+    two_weeks = "2주 이상 고민했어요"
+
+
+class Discovery(str, Enum):
+    search = "쇼핑 앱에서 카테고리 검색 후 찾아보다 발견했어요"
+    influencer = "유튜버/인플루언서가 입은 것을 봤어요"
+    ranking = "쇼핑 앱에서 랭킹이나 유저 추천을 둘러보다 발견했어요"
+    sns = "인스타/틱톡/X 같은 SNS 보다가 발견했어요"
+    brand = "브랜드 계정에 신상이 추가된 걸 봤어요"
+
+
 
 class SurveyRequest(BaseModel):
     q1: int = Field(..., description="장바구니 기간 (1-5)", example=1)

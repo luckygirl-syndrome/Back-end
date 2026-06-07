@@ -21,11 +21,14 @@ _200 = lambda result: {"200": {"content": {"application/json": {"example": {"isS
     description="상품 스크린샷(1장 이상)과 설문 답변을 받아 Gemini로 분석 후 충동 점수·취향 일치 점수를 계산하고 채팅 세션을 생성합니다.",
     responses=_200({
         "user_product_id": 1,
+        "product_name": "Healing Off-Shoulder Tee",
+        "price": 45500,
         "product_info": ["상품명: Healing Off-Shoulder Tee", "가격: 65,000원 → 45,500원 (30% 할인)"],
         "confirmed_sentences": ["이 유저는 스트릿 스타일을 좋아합니다.", "충동 점수는 54점이고 일치하는 점수는 74점입니다."],
         "user_type": {"code": "DIMO", "axis_summary": ["[확신 방식/I] ..."], "priority_rule": "..."},
         "impulse_score": 54,
         "match_score": 74,
+        "product_img": ["data:image/jpeg;base64,..."],
     }),
 )
 async def start_chat(

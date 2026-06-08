@@ -76,6 +76,37 @@ def get_receipt_detail(
 
 
 @router.get(
+    "/stats",
+    summary="홈 통계",
+    description="최근 또바바 점수 4개 + 구매 전환율 + 소비 만족도 조회",
+    response_model=schemas.StatsResponse,
+    responses=_200({
+        "status": "success",
+        "data": {
+            "recent_scores": [
+                {"product_name": "Healing Tee", "score": 72},
+                {"product_name": "Linen Shirt", "score": 45},
+                {"product_name": "Wool Overfit", "score": 88},
+                {"product_name": "Floral Dress", "score": 30},
+            ],
+            "purchase_conversion": {"total": 5, "purchased": 2},
+            "satisfaction": {"total": 5, "satisfied": 3},
+        },
+    }),
+)
+def get_stats(
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    try:
+        user_id = current_user.user_id
+        return service.get_stats(db, user_id)
+    except Exception as e:
+        print("stats error:", e)
+        raise HTTPException(status_code=500, detail="통계 데이터를 불러오지 못했어.")
+
+
+@router.get(
     "/considering",
     summary="고민 중인 목록",
     description="결정했나요? (고민 중인) 목록 조회",

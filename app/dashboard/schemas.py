@@ -47,6 +47,30 @@ class ReceiptDetailResponse(BaseModel):
     data: ReceiptDetailData
 
 # -------------------------------------------------------------
+# Stats (또바바 점수 & 통계)
+# -------------------------------------------------------------
+class RecentScoreItem(BaseModel):
+    product_name: str
+    score: int
+
+class ConversionStats(BaseModel):
+    total: int
+    purchased: int
+
+class SatisfactionStats(BaseModel):
+    total: int
+    satisfied: int
+
+class StatsData(BaseModel):
+    recent_scores: List[RecentScoreItem]
+    purchase_conversion: ConversionStats
+    satisfaction: SatisfactionStats
+
+class StatsResponse(BaseModel):
+    status: str
+    data: StatsData
+
+# -------------------------------------------------------------
 # Considering (결정했나요?)
 # -------------------------------------------------------------
 class ConsideringListItem(BaseModel):

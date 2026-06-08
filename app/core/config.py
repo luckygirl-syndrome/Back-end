@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     SENTRY_DSN: str = ""
+    FIREBASE_CREDENTIALS_PATH: str = "firebase-credentials.json"
 
     @property
     def db_engine_kwargs(self):

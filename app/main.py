@@ -1,4 +1,5 @@
 import redis
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -16,13 +17,23 @@ from app.products import router as products_router
 from app.dashboard import home_router
 from app.chat.after_chat.router import router as after_chat_router
 from app.chat.router import router as chat_router
+from app.notifications.router import router as notifications_router
+from app.notifications.scheduler import start_scheduler, scheduler
+from app.notifications import models as notification_models
 
 
 # 서버 시작 시 테이블 생성
 Base.metadata.create_all(bind=engine)
 
 
-app = FastAPI(title=settings.PROJECT_NAME)
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    start_scheduler()
+    yield
+    scheduler.shutdown()
+
+
+app = FastAPI(title=settings.PROJECT_NAME, lifespan=lifespan)
 
 # 라우터 등록
 app.include_router(user_router)
@@ -33,6 +44,7 @@ app.include_router(products_router.router)
 app.include_router(chat_router)
 app.include_router(after_chat_router)
 app.include_router(home_router.router)
+app.include_router(notifications_router)
 
 import logging
 from fastapi import Request

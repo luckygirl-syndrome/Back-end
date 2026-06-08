@@ -16,6 +16,21 @@ from app.chat.models import Chat
 from app.products.models import Product, UserProduct
 from app.users.models import User
 
+import logging as _logging
+
+_logger = _logging.getLogger(__name__)
+
+
+def _notify_chat(db: Session, user_id: int, reply: str):
+    """또바 메시지 → FCM 푸시 + 알림함 저장"""
+    try:
+        from app.notifications.service import send_push_to_user
+        preview = reply[:50] + "..." if len(reply) > 50 else reply
+        send_push_to_user(db, user_id, title="또바", body=preview, save_to_inbox=False)
+    except Exception as e:
+        _logger.warning(f"채팅 FCM 알림 실패 (user={user_id}): {e}")
+
+
 _STATUS_LABEL = {
     "PURCHASED": "구매 완료",
     "ABANDONED": "구매 포기",
@@ -310,6 +325,7 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
 
     reply = await asyncio.to_thread(call_deepseek, messages)
     _save_message(db, user_id, user_product_id, "assistant", reply)
+    _notify_chat(db, user_id, reply)
     return {"reply": reply, "is_exit": False, "final_code": None}
 
 
@@ -338,6 +354,7 @@ async def send_message(
     clean_reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
 
     _save_message(db, user_id, user_product_id, "assistant", clean_reply)
+    _notify_chat(db, user_id, clean_reply)
 
     if final_code:
         up.final_code = final_code

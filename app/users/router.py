@@ -53,6 +53,8 @@ def _verify_google_token(id_token: str) -> dict:
 
 def _verify_kakao_token(id_token: str) -> dict:
     try:
+        unverified = jose_jwt.get_unverified_claims(id_token)
+        logger.info(f"[카카오 토큰 aud] {unverified.get('aud')} / 설정값: {settings.KAKAO_NATIVE_APP_KEY}")
         jwks = httpx.get("https://kauth.kakao.com/.well-known/jwks.json").json()
         kid = jose_jwt.get_unverified_header(id_token).get("kid")
         public_key = next((k for k in jwks["keys"] if k["kid"] == kid), None)

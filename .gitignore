@@ -28,3 +28,4 @@ certbot/
 student_distilled_e5_rule/
 CLAUDE.md
 app/firebase-credentials.json
+firebase-credentials.json

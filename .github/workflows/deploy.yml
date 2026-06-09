@@ -15,12 +15,12 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          port: ${{ secrets.EC2_PORT }}
+          port: 22
           script: |
             set -e # 에러 발생 시 즉시 중단
-            
+
             echo "🚀 배포를 시작합니다..."
-            cd /home/ec2-user/back-end
+            cd /home/ec2-user/Back-end
             
             echo "📦 최신 코드 가져오는 중..."
             git pull origin main

@@ -144,3 +144,22 @@ class PasswordChange(BaseModel):
         if len(v) < 8:
             raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
         return v
+
+# 10. 비밀번호 재설정 (이메일 코드 방식)
+class PasswordResetRequest(BaseModel):
+    email: EmailStr
+
+class PasswordResetVerify(BaseModel):
+    email: EmailStr
+    code: str
+
+class PasswordResetConfirm(BaseModel):
+    resetToken: str
+    newPassword: str
+
+    @field_validator("newPassword")
+    @classmethod
+    def password_min_length(cls, v: str) -> str:
+        if len(v) < 8:
+            raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
+        return v

@@ -29,6 +29,11 @@ class Settings(BaseSettings):
     SENTRY_DSN: str = ""
     FIREBASE_CREDENTIALS_PATH: str = "firebase-credentials.json"
     ADMIN_SECRET_KEY: str = ""
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM: str = ""
 
     @property
     def db_engine_kwargs(self):

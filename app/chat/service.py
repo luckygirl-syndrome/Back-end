@@ -319,7 +319,7 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
     # 이미 메시지가 있으면 중복 생성 방지
     existing = db.query(Chat).filter(Chat.user_product_id == user_product_id).first()
     if existing:
-        return {"reply": existing.content, "is_exit": False, "final_code": None}
+        return None  # 프론트는 get_chat_room으로 기존 히스토리 조회
 
     system_prompt = build_system_prompt(up.prompt_data)
     messages = [
@@ -329,7 +329,7 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
 
     reply = await asyncio.to_thread(call_deepseek, messages)
     _save_message(db, user_id, user_product_id, "assistant", reply)
-    _notify_chat(db, user_id, reply)
+    _notify_chat(db, user_id, user_product_id, reply)
     return {"reply": reply, "is_exit": False, "final_code": None}
 
 

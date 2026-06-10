@@ -42,7 +42,7 @@ class UserProduct(Base):
     completed_at = Column(DateTime)
     duration_ms = Column(Integer)
     status = Column(String(50))
-    user_type = Column(String(50))
+    user_type = Column(Text)
     impulse_score = Column(Integer)
     final_score = Column(Integer)
     preference_score = Column(Integer, default=50)

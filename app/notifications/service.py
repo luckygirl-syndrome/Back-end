@@ -33,15 +33,21 @@ def _send_to_token(token: str, title: str, body: str) -> bool:
         return False
 
 
-def send_push_to_user(db: Session, user_id: int, title: str, body: str, save_to_inbox: bool = False):
+def send_push_to_user(db: Session, user_id: int, title: str, body: str, save_to_inbox: bool = False, notification_type: str = "chat"):
     tokens = db.query(FcmToken).filter(FcmToken.user_id == user_id).all()
     for fcm_token in tokens:
         _send_to_token(fcm_token.token, title, body)
 
     if save_to_inbox:
-        notification = Notification(user_id=user_id, title=title, body=body)
+        notification = Notification(user_id=user_id, title=title, body=body, notification_type=notification_type)
         db.add(notification)
         db.commit()
+
+
+def broadcast_announcement(db: Session, title: str, body: str):
+    user_ids = [row[0] for row in db.query(FcmToken.user_id).distinct().all()]
+    for user_id in user_ids:
+        send_push_to_user(db, user_id, title, body, save_to_inbox=True, notification_type="announcement")
 
 
 def register_token(db: Session, user_id: int, token: str, device_type: str = "ios"):

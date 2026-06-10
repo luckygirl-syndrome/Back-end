@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.response import success
+from app.core.redis_client import redis_client
 from app.users.models import User
 from app.users.router import get_current_user
 from app.chat import service
@@ -173,7 +174,26 @@ async def exit_chat(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    redis_client.delete(f"active_chat:{current_user.user_id}")
     result = await service.exit_chat(db, user_product_id, current_user.user_id)
     if not result:
         raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다.")
     return success(result)
+
+
+@router.post("/{user_product_id}/active", summary="채팅방 입장 알림 (알림 억제)")
+def enter_chat_room(
+    user_product_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    redis_client.setex(f"active_chat:{current_user.user_id}", 3600, user_product_id)
+    return success({"message": "채팅방 입장"})
+
+
+@router.delete("/{user_product_id}/active", summary="채팅방 퇴장 알림 (알림 재개)")
+def leave_chat_room(
+    user_product_id: int,
+    current_user: User = Depends(get_current_user),
+):
+    redis_client.delete(f"active_chat:{current_user.user_id}")
+    return success({"message": "채팅방 퇴장"})

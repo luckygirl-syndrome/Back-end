@@ -21,12 +21,16 @@ import logging as _logging
 _logger = _logging.getLogger(__name__)
 
 
-def _notify_chat(db: Session, user_id: int, reply: str):
-    """또바 메시지 → FCM 푸시 + 알림함 저장"""
+def _notify_chat(db: Session, user_id: int, user_product_id: int, reply: str):
+    """또바 메시지 → 채팅방 밖에 있을 때만 FCM 푸시 + 알림함 저장"""
     try:
         from app.notifications.service import send_push_to_user
+        from app.core.redis_client import redis_client
+        active = redis_client.get(f"active_chat:{user_id}")
+        if active and int(active) == user_product_id:
+            return
         preview = reply[:50] + "..." if len(reply) > 50 else reply
-        send_push_to_user(db, user_id, title="또바", body=preview, save_to_inbox=False)
+        send_push_to_user(db, user_id, title="또바", body=preview, save_to_inbox=True, notification_type="chat")
     except Exception as e:
         _logger.warning(f"채팅 FCM 알림 실패 (user={user_id}): {e}")
 
@@ -354,7 +358,7 @@ async def send_message(
     clean_reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
 
     _save_message(db, user_id, user_product_id, "assistant", clean_reply)
-    _notify_chat(db, user_id, clean_reply)
+    _notify_chat(db, user_id, user_product_id, clean_reply)
 
     if final_code:
         up.final_code = final_code

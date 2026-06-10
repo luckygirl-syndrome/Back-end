@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     REDIS_PORT: int = 6379
     SENTRY_DSN: str = ""
     FIREBASE_CREDENTIALS_PATH: str = "firebase-credentials.json"
+    ADMIN_SECRET_KEY: str = ""
 
     @property
     def db_engine_kwargs(self):

@@ -22,13 +22,9 @@ _logger = _logging.getLogger(__name__)
 
 
 def _notify_chat(db: Session, user_id: int, user_product_id: int, reply: str):
-    """또바 메시지 → 채팅방 밖에 있을 때만 FCM 푸시 + 알림함 저장"""
+    """또바 메시지 → FCM 푸시 + 알림함 저장 (항상 발송, 포그라운드 처리는 프론트에서)"""
     try:
         from app.notifications.service import send_push_to_user
-        from app.core.redis_client import redis_client
-        active = redis_client.get(f"active_chat:{user_id}")
-        if active and int(active) == user_product_id:
-            return
         preview = reply[:50] + "..." if len(reply) > 50 else reply
         send_push_to_user(db, user_id, title="또바", body=preview, save_to_inbox=True, notification_type="chat")
     except Exception as e:

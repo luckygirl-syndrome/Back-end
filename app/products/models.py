@@ -54,5 +54,6 @@ class UserProduct(Base):
     is_returned = Column(Boolean, nullable=True)
     satisfaction = Column(String(50), nullable=True)
     review = Column(Text, nullable=True)
+    last_read_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.now)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)

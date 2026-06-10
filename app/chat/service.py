@@ -5,6 +5,7 @@ import json
 import re
 import shutil
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -220,6 +221,19 @@ def get_chat_list(db: Session, user_id: int) -> List[dict]:
         except Exception:
             thumbnail = raw_img
 
+        last_assistant_msg = (
+            db.query(Chat)
+            .filter(Chat.user_product_id == up.user_product_id, Chat.role == "assistant")
+            .order_by(Chat.created_at.desc())
+            .first()
+        )
+        has_unread = bool(
+            last_assistant_msg and (
+                up.last_read_at is None or
+                last_assistant_msg.created_at > up.last_read_at
+            )
+        )
+
         items.append({
             "user_product_id": up.user_product_id,
             "product_name": product.product_name if product else "알 수 없음",
@@ -230,6 +244,7 @@ def get_chat_list(db: Session, user_id: int) -> List[dict]:
             "impulse_score": up.impulse_score,
             "match_score": up.preference_score,
             "requested_at": up.requested_at.isoformat() if up.requested_at else None,
+            "has_unread": has_unread,
         })
     return items
 
@@ -284,6 +299,14 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
             for m in messages
         ],
     }
+
+
+def mark_chat_read(db: Session, user_product_id: int, user_id: int) -> None:
+    db.query(UserProduct).filter(
+        UserProduct.user_product_id == user_product_id,
+        UserProduct.user_id == user_id,
+    ).update({"last_read_at": datetime.now()})
+    db.commit()
 
 
 def _build_history(db: Session, user_product_id: int) -> list:

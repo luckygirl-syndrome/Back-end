@@ -110,6 +110,7 @@ def get_chat_room(
     room = service.get_chat_room(db, user_product_id, current_user.user_id)
     if not room:
         raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다.")
+    service.mark_chat_read(db, user_product_id, current_user.user_id)
     return success(room)
 
 

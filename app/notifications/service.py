@@ -27,14 +27,16 @@ def _send_to_token(token: str, title: str, body: str) -> bool:
             token=token,
         )
         messaging.send(message)
+        logger.info(f"FCM 발송 성공 (token={token[:20]}...)")
         return True
-    except firebase_admin.exceptions.FirebaseError as e:
+    except Exception as e:
         logger.error(f"FCM 발송 실패 (token={token[:20]}...): {e}")
         return False
 
 
 def send_push_to_user(db: Session, user_id: int, title: str, body: str, save_to_inbox: bool = False, notification_type: str = "chat"):
     tokens = db.query(FcmToken).filter(FcmToken.user_id == user_id).all()
+    logger.info(f"FCM 발송 시도 (user={user_id}, 토큰 수={len(tokens)})")
     for fcm_token in tokens:
         _send_to_token(fcm_token.token, title, body)
 

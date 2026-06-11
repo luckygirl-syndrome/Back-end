@@ -34,6 +34,9 @@ class Settings(BaseSettings):
     SMTP_USER: str = ""
     SMTP_PASSWORD: str = ""
     EMAIL_FROM: str = ""
+    COOLSMS_API_KEY: str = ""
+    COOLSMS_API_SECRET: str = ""
+    COOLSMS_FROM: str = ""
 
     @property
     def db_engine_kwargs(self):

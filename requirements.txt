@@ -43,3 +43,4 @@ Requests==2.32.5
 protobuf==5.29.6
 certifi==2026.1.4
 openai
+coolsms-python-sdk

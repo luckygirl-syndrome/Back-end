@@ -247,6 +247,8 @@ def get_chat_list(db: Session, user_id: int, cursor: Optional[int] = None, size:
         )
         product_map = {p.product_id: p for p in products}
 
+    user_product_ids = [up.user_product_id for up in user_products]
+
     # 채팅방별 마지막 assistant 메시지 한 번에 조회
     subq = (
         select(

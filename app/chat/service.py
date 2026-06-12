@@ -202,16 +202,50 @@ async def analyze_and_create_session(
 
 
 def get_chat_list(db: Session, user_id: int) -> List[dict]:
+    from sqlalchemy import select, func, and_
+    from sqlalchemy.orm import load_only
+
     user_products = (
         db.query(UserProduct)
         .filter(UserProduct.user_id == user_id)
         .order_by(UserProduct.requested_at.desc())
         .all()
     )
+    if not user_products:
+        return []
+
+    product_ids = [up.product_id for up in user_products]
+    user_product_ids = [up.user_product_id for up in user_products]
+
+    products = (
+        db.query(Product)
+        .filter(Product.product_id.in_(product_ids))
+        .options(load_only(Product.product_id, Product.product_name, Product.price, Product.product_img))
+        .all()
+    )
+    product_map = {p.product_id: p for p in products}
+
+    # 채팅방별 마지막 assistant 메시지 한 번에 조회
+    subq = (
+        select(
+            Chat.user_product_id,
+            func.max(Chat.created_at).label("last_at"),
+        )
+        .where(
+            and_(
+                Chat.user_product_id.in_(user_product_ids),
+                Chat.role == "assistant",
+            )
+        )
+        .group_by(Chat.user_product_id)
+        .subquery()
+    )
+    last_msg_rows = db.execute(select(subq)).fetchall()
+    last_msg_map = {row.user_product_id: row.last_at for row in last_msg_rows}
 
     items = []
     for up in user_products:
-        product = db.query(Product).filter(Product.product_id == up.product_id).first()
+        product = product_map.get(up.product_id)
         raw_img = product.product_img if product else None
         try:
             img_list = json.loads(raw_img) if raw_img else []
@@ -219,18 +253,8 @@ def get_chat_list(db: Session, user_id: int) -> List[dict]:
         except Exception:
             thumbnail = raw_img
 
-        last_assistant_msg = (
-            db.query(Chat)
-            .filter(Chat.user_product_id == up.user_product_id, Chat.role == "assistant")
-            .order_by(Chat.created_at.desc())
-            .first()
-        )
-        has_unread = bool(
-            last_assistant_msg and (
-                up.last_read_at is None or
-                last_assistant_msg.created_at > up.last_read_at
-            )
-        )
+        last_at = last_msg_map.get(up.user_product_id)
+        has_unread = bool(last_at and (up.last_read_at is None or last_at > up.last_read_at))
 
         items.append({
             "user_product_id": up.user_product_id,

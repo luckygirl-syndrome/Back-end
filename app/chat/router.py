@@ -95,7 +95,6 @@ def get_chat_list(
         "finalScore": None,
         "impulse_score": 54,
         "match_score": 74,
-        "prompt_data": {},
         "messages": [
             {"role": "assistant", "content": "일주일째 눈에 밟히고...", "created_at": "2026-06-06T12:00:00"},
             {"role": "user", "content": "이거 살까?", "created_at": "2026-06-06T12:01:00"},
@@ -165,7 +164,6 @@ async def send_message(
     summary="채팅 종료",
     description="채팅 종료하기 버튼을 누르면 호출합니다. LLM이 대화를 분석해 최종 CODE와 또바바 점수를 반환합니다.",
     responses=_200({
-        "reply": "지금까지 고민한 거 잘 정리된 것 같아. 네 선택 믿어봐.",
         "finalCode": "BUY_CONFIDENT_GROUNDED",
         "finalScore": 73,
     }),

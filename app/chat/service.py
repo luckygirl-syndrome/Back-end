@@ -57,9 +57,7 @@ FIRST_TURN_TRIGGER = "대화를 시작해줘. 첫 답변 규칙에 따라 2문�
 EXIT_TRIGGER = (
     "대화가 [EXIT] 신호로 종료됩니다. "
     "전체 대화에서 드러난 유저의 구매 판단 태도를 분석하고, "
-    "또바의 마지막 한마디를 1~2문장으로 먼저 작성해. "
-    "따뜻하고 간결하게, 친구처럼 마무리해줘. "
-    "마지막 줄에는 반드시 'CODE: 코드명' 형식으로 코드를 출력해."
+    "반드시 'CODE: 코드명' 형식으로만 출력해."
 )
 
 
@@ -261,7 +259,13 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
     if not up:
         return None
 
-    product = db.query(Product).filter(Product.product_id == up.product_id).first()
+    from sqlalchemy.orm import load_only
+    product = (
+        db.query(Product)
+        .filter(Product.product_id == up.product_id)
+        .options(load_only(Product.product_name, Product.price, Product.product_img))
+        .first()
+    )
 
     messages = (
         db.query(Chat)
@@ -289,7 +293,6 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
         "finalScore": up.final_score,
         "impulse_score": up.impulse_score,
         "match_score": up.preference_score,
-        "prompt_data": up.prompt_data,
         "messages": [
             {
                 "role": m.role,
@@ -413,9 +416,6 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
     final_code = _parse_code(reply)
     _logging.getLogger(__name__).info(f"[EXIT] raw reply: {repr(reply)} | parsed code: {final_code}")
 
-    # CODE 줄 제거 → 나머지가 마지막 멘트
-    last_message = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
-
     if not final_code:
         final_code = "NEUTRAL_EXPLORING"
 
@@ -423,12 +423,7 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
     up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
     db.commit()
 
-    # 마지막 멘트 DB 저장
-    if last_message:
-        _save_message(db, user_id, user_product_id, "assistant", last_message)
-
     return {
-        "reply": last_message or None,
         "finalCode": final_code,
         "finalScore": up.final_score,
     }

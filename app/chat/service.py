@@ -1,5 +1,4 @@
 import asyncio
-import base64
 import functools
 import json
 import re
@@ -125,10 +124,12 @@ async def analyze_and_create_session(
     tmp_img_dir = Path(tempfile.mkdtemp())
     tmp_out_dir = Path(tempfile.mkdtemp())
 
+    from app.core.s3 import upload_image
+
     try:
-        # 이미지 임시 저장 + base64 인코딩
+        # 이미지 임시 저장 + S3 업로드
         image_paths = []
-        image_b64_list = []
+        image_url_list = []
         for i, img in enumerate(images):
             content = await img.read()
             suffix = Path(img.filename or "image.jpg").suffix or ".jpg"
@@ -136,8 +137,8 @@ async def analyze_and_create_session(
             path = tmp_img_dir / f"img_{i}{suffix}"
             path.write_bytes(content)
             image_paths.append(path)
-            b64 = base64.b64encode(content).decode("utf-8")
-            image_b64_list.append(f"data:{mime};base64,{b64}")
+            url = await asyncio.to_thread(upload_image, content, mime)
+            image_url_list.append(url)
 
         # Gemini 호출은 동기 함수라 스레드풀에서 실행
         run_fn = functools.partial(
@@ -168,7 +169,7 @@ async def analyze_and_create_session(
         product_name=product_name,
         price=price,
         discount_rate=discount_rate,
-        product_img=json.dumps(image_b64_list, ensure_ascii=False),
+        product_img=json.dumps(image_url_list, ensure_ascii=False),
     )
     db.add(product)
     db.flush()
@@ -196,8 +197,8 @@ async def analyze_and_create_session(
         "user_type": result.get("user_type", {}),
         "impulse_score": impulse_score,
         "match_score": match_score,
-        "product_img": image_b64_list[0] if image_b64_list else None,
-        "product_imgs": image_b64_list,
+        "product_img": image_url_list[0] if image_url_list else None,
+        "product_imgs": image_url_list,
     }
 
 

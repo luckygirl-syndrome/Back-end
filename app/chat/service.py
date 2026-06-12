@@ -201,18 +201,29 @@ async def analyze_and_create_session(
     }
 
 
-def get_chat_list(db: Session, user_id: int) -> List[dict]:
+def get_chat_list(db: Session, user_id: int, cursor: Optional[int] = None, size: int = 20) -> dict:
     from sqlalchemy import select, func, and_
     from sqlalchemy.orm import load_only
 
-    user_products = (
+    query = (
         db.query(UserProduct)
         .filter(UserProduct.user_id == user_id)
-        .order_by(UserProduct.requested_at.desc())
+    )
+    if cursor is not None:
+        query = query.filter(UserProduct.user_product_id < cursor)
+
+    user_products = (
+        query
+        .order_by(UserProduct.user_product_id.desc())
+        .limit(size + 1)
         .all()
     )
+
+    has_next = len(user_products) > size
+    user_products = user_products[:size]
+
     if not user_products:
-        return []
+        return {"items": [], "nextCursor": None, "hasNext": False}
 
     product_ids = [up.product_id for up in user_products]
     user_product_ids = [up.user_product_id for up in user_products]
@@ -268,7 +279,9 @@ def get_chat_list(db: Session, user_id: int) -> List[dict]:
             "requested_at": up.requested_at.isoformat() if up.requested_at else None,
             "has_unread": has_unread,
         })
-    return items
+
+    next_cursor = user_products[-1].user_product_id if has_next else None
+    return {"items": items, "nextCursor": next_cursor, "hasNext": has_next}
 
 
 def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[dict]:

@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -57,27 +57,34 @@ async def start_chat(
 @router.get(
     "/list",
     summary="채팅 목록 조회",
-    description="현재 유저의 모든 채팅 세션을 최신순으로 반환합니다.",
-    responses=_200([
-        {
-            "user_product_id": 1,
-            "product_name": "Healing Off-Shoulder Tee",
-            "product_img": "data:image/jpeg;base64,...",
-            "price": 45500,
-            "status": "PENDING",
-            "statusLabel": "고민 중",
-            "impulse_score": 54,
-            "match_score": 74,
-            "requested_at": "2026-06-06T12:00:00",
-        }
-    ]),
+    description="cursor 기반 무한스크롤. cursor 없으면 첫 페이지, cursor에 이전 응답의 nextCursor 값을 넘기면 다음 페이지.",
+    responses=_200({
+        "items": [
+            {
+                "user_product_id": 1,
+                "product_name": "Healing Off-Shoulder Tee",
+                "product_img": "data:image/jpeg;base64,...",
+                "price": 45500,
+                "status": "PENDING",
+                "statusLabel": "고민 중",
+                "impulse_score": 54,
+                "match_score": 74,
+                "requested_at": "2026-06-06T12:00:00",
+                "has_unread": False,
+            }
+        ],
+        "nextCursor": 5,
+        "hasNext": True,
+    }),
 )
 def get_chat_list(
+    cursor: Optional[int] = None,
+    size: int = 20,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    items = service.get_chat_list(db, current_user.user_id)
-    return success(items)
+    result = service.get_chat_list(db, current_user.user_id, cursor=cursor, size=size)
+    return success(result)
 
 
 @router.get(

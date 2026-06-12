@@ -216,7 +216,7 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
     )
 
 
-def get_considering_items(db: Session, user_id: int, cursor: int = None, size: int = 20) -> schemas.ConsideringListResponse:
+def get_considering_items(db: Session, user_id: int, cursor: int = None, size: int = 20, sort: str = "newest") -> schemas.ConsideringListResponse:
     """결정했나요? 목록 = 채팅에서 고민 중인 상품만, 상품별 최신 1건 (채팅 목록과 동일 방식)"""
     subquery = (
         db.query(
@@ -246,15 +246,27 @@ def get_considering_items(db: Session, user_id: int, cursor: int = None, size: i
             (UserProduct.status == "PENDING") | (UserProduct.status == "FINISHED") | (UserProduct.status == "ANALYZING")
         )
     )
-    if cursor is not None:
-        query = query.filter(UserProduct.user_product_id < cursor)
+    if sort == "oldest":
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id > cursor)
+        order = UserProduct.user_product_id.asc()
+    elif sort == "price_asc":
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id < cursor)
+        order = (Product.price.asc(), UserProduct.user_product_id.desc())
+    elif sort == "price_desc":
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id < cursor)
+        order = (Product.price.desc(), UserProduct.user_product_id.desc())
+    else:  # newest
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id < cursor)
+        order = UserProduct.user_product_id.desc()
 
     results = (
         query
-        .order_by(UserProduct.user_product_id.desc())
-        .limit(size + 1)
-        .all()
-    )
+        .order_by(*order) if isinstance(order, tuple) else query.order_by(order)
+    ).limit(size + 1).all()
 
     has_next = len(results) > size
     results = results[:size]

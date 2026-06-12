@@ -225,7 +225,7 @@ def get_considering_items(db: Session, user_id: int, cursor: int = None, size: i
         )
         .filter(UserProduct.user_id == user_id)
         .filter(UserProduct.product_id != 0)
-        .filter(UserProduct.is_purchased == 0)
+        .filter(UserProduct.is_purchased.isnot(True))
         .filter(
             (UserProduct.status == "PENDING") | (UserProduct.status == "FINISHED") | (UserProduct.status == "ANALYZING")
         )
@@ -241,7 +241,7 @@ def get_considering_items(db: Session, user_id: int, cursor: int = None, size: i
             & (UserProduct.updated_at == subquery.c.max_updated_at)
         )
         .filter(UserProduct.user_id == user_id)
-        .filter(UserProduct.is_purchased == 0)
+        .filter(UserProduct.is_purchased.isnot(True))
         .filter(
             (UserProduct.status == "PENDING") | (UserProduct.status == "FINISHED") | (UserProduct.status == "ANALYZING")
         )

@@ -95,6 +95,7 @@ def get_chat_list(
         "finalScore": None,
         "impulse_score": 54,
         "match_score": 74,
+        "hasReview": False,
         "messages": [
             {"role": "assistant", "content": "일주일째 눈에 밟히고...", "created_at": "2026-06-06T12:00:00"},
             {"role": "user", "content": "이거 살까?", "created_at": "2026-06-06T12:01:00"},

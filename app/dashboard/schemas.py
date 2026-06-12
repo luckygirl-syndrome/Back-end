@@ -61,10 +61,18 @@ class SatisfactionStats(BaseModel):
     total: int
     satisfied: int
 
+class OverdueReviewItem(BaseModel):
+    user_product_id: int
+    product_name: str
+    product_img: Optional[str] = None
+    price: int
+    days_since_purchase: int
+
 class StatsData(BaseModel):
     recent_scores: List[RecentScoreItem]
     purchase_conversion: ConversionStats
     satisfaction: SatisfactionStats
+    overdue_item: Optional[OverdueReviewItem] = None
 
 class StatsResponse(BaseModel):
     status: str

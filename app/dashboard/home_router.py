@@ -126,3 +126,27 @@ def get_considering_list(
     except Exception as e:
         print("considering list error:", e)
         raise HTTPException(status_code=500, detail="고민 중인 목록 데이터를 불러오지 못했어.")
+
+
+@router.post(
+    "/overdue-item/{user_product_id}/dismiss",
+    summary="평가 알림 숨기기",
+    description="X 버튼 누르면 해당 상품의 평가 유도 알림을 영구적으로 숨깁니다.",
+    responses=_200(None),
+)
+def dismiss_overdue_item(
+    user_product_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.products.models import UserProduct
+    up = db.query(UserProduct).filter(
+        UserProduct.user_product_id == user_product_id,
+        UserProduct.user_id == current_user.user_id,
+    ).first()
+    if not up:
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+    up.review_nudge_dismissed = True
+    db.commit()
+    from app.core.response import success
+    return success(None)

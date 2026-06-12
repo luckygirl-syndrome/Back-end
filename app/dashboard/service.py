@@ -164,6 +164,41 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
         UserProduct.review.ilike("%만족%"),
     ).count()
 
+    # 구매 후 7일 이상 & 리뷰 없는 상품 중 가장 오래된 1개
+    seven_days_ago = datetime.now() - timedelta(days=7)
+    overdue_row = (
+        db.query(UserProduct, Product)
+        .join(Product, UserProduct.product_id == Product.product_id)
+        .filter(
+            UserProduct.user_id == user_id,
+            UserProduct.status == "PURCHASED",
+            UserProduct.review.is_(None),
+            UserProduct.review_nudge_dismissed.isnot(True),
+            UserProduct.completed_at.isnot(None),
+            UserProduct.completed_at <= seven_days_ago,
+        )
+        .order_by(UserProduct.completed_at.asc())
+        .first()
+    )
+
+    overdue_item = None
+    if overdue_row:
+        up, prod = overdue_row
+        days = (datetime.now() - up.completed_at).days
+        raw_img = prod.product_img
+        try:
+            img_list = __import__("json").loads(raw_img) if raw_img else []
+            thumbnail = img_list[0] if img_list else None
+        except Exception:
+            thumbnail = raw_img
+        overdue_item = schemas.OverdueReviewItem(
+            user_product_id=up.user_product_id,
+            product_name=prod.product_name,
+            product_img=thumbnail,
+            price=prod.price,
+            days_since_purchase=days,
+        )
+
     return schemas.StatsResponse(
         status="success",
         data=schemas.StatsData(
@@ -176,6 +211,7 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
                 total=feedback_total,
                 satisfied=satisfied_count,
             ),
+            overdue_item=overdue_item,
         ),
     )
 

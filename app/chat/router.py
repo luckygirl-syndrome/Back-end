@@ -80,10 +80,11 @@ async def start_chat(
 def get_chat_list(
     cursor: Optional[int] = None,
     size: int = 20,
+    sort: str = "newest",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = service.get_chat_list(db, current_user.user_id, cursor=cursor, size=size)
+    result = service.get_chat_list(db, current_user.user_id, cursor=cursor, size=size, sort=sort)
     return success(result)
 
 

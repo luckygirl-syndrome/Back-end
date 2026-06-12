@@ -202,40 +202,50 @@ async def analyze_and_create_session(
     }
 
 
-def get_chat_list(db: Session, user_id: int, cursor: Optional[int] = None, size: int = 20) -> dict:
+def get_chat_list(db: Session, user_id: int, cursor: Optional[int] = None, size: int = 20, sort: str = "newest") -> dict:
     from sqlalchemy import select, func, and_
     from sqlalchemy.orm import load_only
 
-    query = (
-        db.query(UserProduct)
-        .filter(UserProduct.user_id == user_id)
-    )
-    if cursor is not None:
-        query = query.filter(UserProduct.user_product_id < cursor)
-
-    user_products = (
-        query
-        .order_by(UserProduct.user_product_id.desc())
-        .limit(size + 1)
-        .all()
-    )
-
-    has_next = len(user_products) > size
-    user_products = user_products[:size]
-
-    if not user_products:
-        return {"items": [], "nextCursor": None, "hasNext": False}
-
-    product_ids = [up.product_id for up in user_products]
-    user_product_ids = [up.user_product_id for up in user_products]
-
-    products = (
-        db.query(Product)
-        .filter(Product.product_id.in_(product_ids))
-        .options(load_only(Product.product_id, Product.product_name, Product.price, Product.product_img))
-        .all()
-    )
-    product_map = {p.product_id: p for p in products}
+    if sort in ("price_asc", "price_desc"):
+        query = (
+            db.query(UserProduct, Product)
+            .join(Product, UserProduct.product_id == Product.product_id)
+            .filter(UserProduct.user_id == user_id)
+        )
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id < cursor)
+        order = (Product.price.asc(), UserProduct.user_product_id.desc()) if sort == "price_asc" \
+            else (Product.price.desc(), UserProduct.user_product_id.desc())
+        rows = query.order_by(*order).limit(size + 1).all()
+        has_next = len(rows) > size
+        rows = rows[:size]
+        if not rows:
+            return {"items": [], "nextCursor": None, "hasNext": False}
+        user_products = [up for up, _ in rows]
+        product_map = {prod.product_id: prod for _, prod in rows}
+    else:
+        query = db.query(UserProduct).filter(UserProduct.user_id == user_id)
+        if sort == "oldest":
+            if cursor is not None:
+                query = query.filter(UserProduct.user_product_id > cursor)
+            order = UserProduct.user_product_id.asc()
+        else:
+            if cursor is not None:
+                query = query.filter(UserProduct.user_product_id < cursor)
+            order = UserProduct.user_product_id.desc()
+        user_products = query.order_by(order).limit(size + 1).all()
+        has_next = len(user_products) > size
+        user_products = user_products[:size]
+        if not user_products:
+            return {"items": [], "nextCursor": None, "hasNext": False}
+        product_ids = [up.product_id for up in user_products]
+        products = (
+            db.query(Product)
+            .filter(Product.product_id.in_(product_ids))
+            .options(load_only(Product.product_id, Product.product_name, Product.price, Product.product_img))
+            .all()
+        )
+        product_map = {p.product_id: p for p in products}
 
     # 채팅방별 마지막 assistant 메시지 한 번에 조회
     subq = (

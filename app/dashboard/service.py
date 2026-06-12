@@ -262,7 +262,9 @@ def get_considering_items(db: Session, user_id: int, cursor: int = None, size: i
     items = []
     now = datetime.now()
     for up, prod in results:
-        duration_days = (now - up.requested_at).days if up.requested_at else None
+        if not up.requested_at:
+            continue
+        duration_days = (now - up.requested_at).days
         items.append(schemas.ConsideringListItem(
             user_product_id=up.user_product_id,
             product_id=prod.product_id,

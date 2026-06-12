@@ -180,7 +180,7 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
     )
 
 
-def get_considering_items(db: Session, user_id: int) -> schemas.ConsideringListResponse:
+def get_considering_items(db: Session, user_id: int, cursor: int = None, size: int = 20) -> schemas.ConsideringListResponse:
     """결정했나요? 목록 = 채팅에서 고민 중인 상품만, 상품별 최신 1건 (채팅 목록과 동일 방식)"""
     subquery = (
         db.query(
@@ -196,7 +196,7 @@ def get_considering_items(db: Session, user_id: int) -> schemas.ConsideringListR
         .group_by(UserProduct.product_id)
         .subquery()
     )
-    results = (
+    query = (
         db.query(UserProduct, Product)
         .join(Product, UserProduct.product_id == Product.product_id)
         .join(
@@ -209,17 +209,24 @@ def get_considering_items(db: Session, user_id: int) -> schemas.ConsideringListR
         .filter(
             (UserProduct.status == "PENDING") | (UserProduct.status == "FINISHED") | (UserProduct.status == "ANALYZING")
         )
-        .order_by(UserProduct.updated_at.desc(), UserProduct.user_product_id.desc())
+    )
+    if cursor is not None:
+        query = query.filter(UserProduct.user_product_id < cursor)
+
+    results = (
+        query
+        .order_by(UserProduct.user_product_id.desc())
+        .limit(size + 1)
         .all()
     )
+
+    has_next = len(results) > size
+    results = results[:size]
 
     items = []
     now = datetime.now()
     for up, prod in results:
-        duration_days = None
-        if up.requested_at:
-            duration_days = (now - up.requested_at).days
-
+        duration_days = (now - up.requested_at).days if up.requested_at else None
         items.append(schemas.ConsideringListItem(
             user_product_id=up.user_product_id,
             product_id=prod.product_id,
@@ -229,7 +236,10 @@ def get_considering_items(db: Session, user_id: int) -> schemas.ConsideringListR
             duration_days=duration_days
         ))
 
+    next_cursor = results[-1][0].user_product_id if has_next else None
     return schemas.ConsideringListResponse(
         status="success",
-        data=items
+        data=items,
+        nextCursor=next_cursor,
+        hasNext=has_next,
     )

@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -114,12 +115,14 @@ def get_stats(
     responses=_200({"status": "success", "data": [{"user_product_id": 2, "product_id": 2, "product_name": "Wide Denim Pants", "product_img": "data:image/jpeg;base64,...", "price": 89000, "duration_days": 3}]}),
 )
 def get_considering_list(
+    cursor: Optional[int] = None,
+    size: int = 20,
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     try:
         user_id = current_user.user_id
-        return service.get_considering_items(db, user_id)
+        return service.get_considering_items(db, user_id, cursor=cursor, size=size)
     except Exception as e:
         print("considering list error:", e)
         raise HTTPException(status_code=500, detail="고민 중인 목록 데이터를 불러오지 못했어.")

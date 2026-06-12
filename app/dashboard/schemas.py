@@ -84,3 +84,5 @@ class ConsideringListItem(BaseModel):
 class ConsideringListResponse(BaseModel):
     status: str
     data: List[ConsideringListItem]
+    nextCursor: Optional[int] = None
+    hasNext: bool = False

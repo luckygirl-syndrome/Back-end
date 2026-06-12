@@ -293,7 +293,7 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
         "finalScore": up.final_score,
         "impulse_score": up.impulse_score,
         "match_score": up.preference_score,
-        "hasReview": up.feedback_rating is not None,
+        "hasReview": up.review is not None,
         "messages": [
             {
                 "role": m.role,

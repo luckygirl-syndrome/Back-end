@@ -33,7 +33,10 @@ def get_current_user(token: str = Depends(api_key_header), db: Session = Depends
     if not payload:
         raise HTTPException(status_code=401, detail="인증 실패")
     user_id = payload.get("sub")
-    user = db.query(models.User).filter(models.User.user_id == int(user_id)).first()
+    user = db.query(models.User).filter(
+        models.User.user_id == int(user_id),
+        models.User.deleted_at.is_(None),
+    ).first()
     if not user:
         raise HTTPException(status_code=401, detail="유저 없음")
     return user
@@ -135,13 +138,19 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
         provider=provider, social_id=social_id
     ).first()
     if link:
-        user = db.query(models.User).filter_by(user_id=link.user_id).first()
+        user = db.query(models.User).filter(
+            models.User.user_id == link.user_id,
+            models.User.deleted_at.is_(None),
+        ).first()
+        if not user:
+            raise HTTPException(status_code=401, detail="탈퇴한 계정입니다.")
         return user, False
 
     # 2. 구 컬럼에서 조회 (마이그레이션)
     old_user = db.query(models.User).filter(
         models.User.social_id == social_id,
         models.User.social_provider == provider,
+        models.User.deleted_at.is_(None),
     ).first()
     if old_user:
         db.add(models.UserSocialProvider(user_id=old_user.user_id, provider=provider, social_id=social_id))
@@ -189,7 +198,10 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 # 2. 로그인
 @router.post("/auth/login", summary="이메일 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer"}))
 def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.email == user_data.email).first()
+    user = db.query(models.User).filter(
+        models.User.email == user_data.email,
+        models.User.deleted_at.is_(None),
+    ).first()
     if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=401, detail="로그인 정보가 올바르지 않습니다.")
     access_token = create_access_token(data={"sub": str(user.user_id)})
@@ -362,4 +374,17 @@ def get_closet_stats(db: Session = Depends(get_db), current_user: models.User = 
         "droppedCount": len(dropped),
         "droppedPrice": dropped_price,
     })
+
+
+# 회원 탈퇴
+@router.delete("/users/me", summary="회원 탈퇴 (소프트 딜리트)", responses=_200(None))
+def delete_my_account(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    current_user.deleted_at = datetime.utcnow()
+    db.commit()
+    if posthog_client:
+        posthog_client.capture(distinct_id=str(current_user.user_id), event="user_deleted")
+    return success(None)
 

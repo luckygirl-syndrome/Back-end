@@ -27,6 +27,7 @@ class User(Base):
     mu_regret = Column(JSONB, nullable=True)
     n_pos = Column(Integer, default=0)
     n_neg = Column(Integer, default=0)
+    deleted_at = Column(DateTime, nullable=True)
 
 
 class UserSocialProvider(Base):

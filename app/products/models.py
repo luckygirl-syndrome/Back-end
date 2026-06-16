@@ -55,6 +55,7 @@ class UserProduct(Base):
     satisfaction = Column(String(50), nullable=True)
     review = Column(Text, nullable=True)
     review_nudge_dismissed = Column(Boolean, nullable=True)
+    is_hidden = Column(Boolean, default=False, nullable=False)
     last_read_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.datetime.now)
     updated_at = Column(DateTime, default=datetime.datetime.now, onupdate=datetime.datetime.now)

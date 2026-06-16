@@ -215,6 +215,7 @@ def get_chat_list(db: Session, user_id: int, cursor: Optional[int] = None, size:
             db.query(UserProduct, Product)
             .join(Product, UserProduct.product_id == Product.product_id)
             .filter(UserProduct.user_id == user_id)
+            .filter(UserProduct.is_hidden.isnot(True))
         )
         if cursor is not None:
             query = query.filter(UserProduct.user_product_id < cursor)
@@ -228,7 +229,7 @@ def get_chat_list(db: Session, user_id: int, cursor: Optional[int] = None, size:
         user_products = [up for up, _ in rows]
         product_map = {prod.product_id: prod for _, prod in rows}
     else:
-        query = db.query(UserProduct).filter(UserProduct.user_id == user_id)
+        query = db.query(UserProduct).filter(UserProduct.user_id == user_id, UserProduct.is_hidden.isnot(True))
         if sort == "oldest":
             if cursor is not None:
                 query = query.filter(UserProduct.user_product_id > cursor)
@@ -310,7 +311,7 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
         )
         .first()
     )
-    if not up:
+    if not up or up.is_hidden:
         return None
 
     from sqlalchemy.orm import load_only

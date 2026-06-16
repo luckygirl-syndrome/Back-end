@@ -189,6 +189,28 @@ async def exit_chat(
     return success(result)
 
 
+@router.delete(
+    "/{user_product_id}",
+    summary="채팅 삭제 (소프트 딜리트)",
+    description="채팅방을 숨김 처리합니다. 실제 데이터는 삭제되지 않습니다.",
+)
+def delete_chat(
+    user_product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.products.models import UserProduct
+    up = db.query(UserProduct).filter(
+        UserProduct.user_product_id == user_product_id,
+        UserProduct.user_id == current_user.user_id,
+    ).first()
+    if not up:
+        raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다.")
+    up.is_hidden = True
+    db.commit()
+    return success(None)
+
+
 @router.post("/{user_product_id}/active", summary="채팅방 입장 알림 (알림 억제)")
 def enter_chat_room(
     user_product_id: int,

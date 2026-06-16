@@ -152,11 +152,10 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
         UserProduct.status == "PURCHASED",
     ).count()
 
-    # 소비 만족도: 리뷰 작성한 것 중 satisfaction이 긍정인 것
+    # 소비 만족도: 구매 확정 전체 (반품 포함)
     feedback_total = db.query(UserProduct).filter(
         UserProduct.user_id == user_id,
-        UserProduct.status == "PURCHASED",
-        UserProduct.satisfaction.isnot(None),
+        UserProduct.status.in_(["PURCHASED", "RETURNED"]),
     ).count()
 
     satisfied_count = db.query(UserProduct).filter(

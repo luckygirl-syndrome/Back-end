@@ -152,16 +152,17 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
         UserProduct.status == "PURCHASED",
     ).count()
 
-    # 소비 만족도: 전체 구매 수 vs "만족" 포함 리뷰
+    # 소비 만족도: 리뷰 작성한 것 중 satisfaction이 긍정인 것
     feedback_total = db.query(UserProduct).filter(
         UserProduct.user_id == user_id,
         UserProduct.status == "PURCHASED",
+        UserProduct.satisfaction.isnot(None),
     ).count()
 
     satisfied_count = db.query(UserProduct).filter(
         UserProduct.user_id == user_id,
         UserProduct.status == "PURCHASED",
-        UserProduct.review.ilike("%만족%"),
+        UserProduct.satisfaction.in_(["이정도면괜찮죠", "최고에요"]),
     ).count()
 
     # 구매 후 7일 이상 & 리뷰 없는 상품 중 가장 오래된 1개

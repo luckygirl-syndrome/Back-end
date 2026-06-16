@@ -152,16 +152,18 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
         UserProduct.status == "PURCHASED",
     ).count()
 
-    # 소비 만족도: 구매 확정 전체 (반품 포함)
+    # 소비 만족도: 최근 3개월 구매 확정 (반품 포함)
     feedback_total = db.query(UserProduct).filter(
         UserProduct.user_id == user_id,
         UserProduct.status.in_(["PURCHASED", "RETURNED"]),
+        UserProduct.completed_at >= three_months_ago,
     ).count()
 
     satisfied_count = db.query(UserProduct).filter(
         UserProduct.user_id == user_id,
         UserProduct.status == "PURCHASED",
         UserProduct.satisfaction.in_(["이정도면괜찮죠", "최고에요"]),
+        UserProduct.completed_at >= three_months_ago,
     ).count()
 
     # 구매 후 7일 이상 & 리뷰 없는 상품 중 가장 오래된 1개

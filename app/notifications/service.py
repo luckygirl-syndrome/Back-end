@@ -70,14 +70,30 @@ def delete_token(db: Session, user_id: int, token: str):
     db.commit()
 
 
-def get_notifications(db: Session, user_id: int) -> list[Notification]:
-    return (
-        db.query(Notification)
+def get_notifications(db: Session, user_id: int) -> list[dict]:
+    from app.products.models import UserProduct, Product
+    rows = (
+        db.query(Notification, Product.product_name)
+        .outerjoin(UserProduct, Notification.user_product_id == UserProduct.user_product_id)
+        .outerjoin(Product, UserProduct.product_id == Product.product_id)
         .filter(Notification.user_id == user_id)
         .order_by(Notification.created_at.desc())
         .limit(50)
         .all()
     )
+    result = []
+    for notif, product_name in rows:
+        result.append({
+            "id": notif.id,
+            "title": notif.title,
+            "body": notif.body,
+            "notification_type": notif.notification_type,
+            "user_product_id": notif.user_product_id,
+            "product_name": product_name,
+            "is_read": notif.is_read,
+            "created_at": notif.created_at,
+        })
+    return result
 
 
 def mark_read(db: Session, user_id: int, notification_id: int):

@@ -14,6 +14,7 @@ class NotificationOut(BaseModel):
     body: str
     notification_type: str = "chat"
     user_product_id: Optional[int] = None
+    product_name: Optional[str] = None
     is_read: bool
     created_at: datetime
 

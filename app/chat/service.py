@@ -26,7 +26,7 @@ def _notify_chat(db: Session, user_id: int, user_product_id: int, reply: str):
     try:
         from app.notifications.service import send_push_to_user
         preview = reply[:50] + "..." if len(reply) > 50 else reply
-        send_push_to_user(db, user_id, title="또바", body=preview, save_to_inbox=True, notification_type="chat")
+        send_push_to_user(db, user_id, title="또바", body=preview, save_to_inbox=True, notification_type="chat", user_product_id=user_product_id)
     except Exception as e:
         _logger.warning(f"채팅 FCM 알림 실패 (user={user_id}): {e}")
 

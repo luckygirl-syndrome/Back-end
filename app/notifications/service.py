@@ -34,14 +34,14 @@ def _send_to_token(token: str, title: str, body: str) -> bool:
         return False
 
 
-def send_push_to_user(db: Session, user_id: int, title: str, body: str, save_to_inbox: bool = False, notification_type: str = "chat"):
+def send_push_to_user(db: Session, user_id: int, title: str, body: str, save_to_inbox: bool = False, notification_type: str = "chat", user_product_id: int = None):
     tokens = db.query(FcmToken).filter(FcmToken.user_id == user_id).all()
     logger.info(f"FCM 발송 시도 (user={user_id}, 토큰 수={len(tokens)})")
     for fcm_token in tokens:
         _send_to_token(fcm_token.token, title, body)
 
     if save_to_inbox:
-        notification = Notification(user_id=user_id, title=title, body=body, notification_type=notification_type)
+        notification = Notification(user_id=user_id, title=title, body=body, notification_type=notification_type, user_product_id=user_product_id)
         db.add(notification)
         db.commit()
 

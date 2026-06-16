@@ -25,8 +25,11 @@ def _notify_chat(db: Session, user_id: int, user_product_id: int, reply: str):
     """또바 메시지 → FCM 푸시 + 알림함 저장 (항상 발송, 포그라운드 처리는 프론트에서)"""
     try:
         from app.notifications.service import send_push_to_user
+        up = db.query(UserProduct).filter(UserProduct.user_product_id == user_product_id).first()
+        product = db.query(Product).filter(Product.product_id == up.product_id).first() if up else None
+        title = product.product_name if product else "또바바"
         preview = reply[:50] + "..." if len(reply) > 50 else reply
-        send_push_to_user(db, user_id, title="또바", body=preview, save_to_inbox=True, notification_type="chat", user_product_id=user_product_id)
+        send_push_to_user(db, user_id, title=title, body=preview, save_to_inbox=True, notification_type="chat", user_product_id=user_product_id)
     except Exception as e:
         _logger.warning(f"채팅 FCM 알림 실패 (user={user_id}): {e}")
 

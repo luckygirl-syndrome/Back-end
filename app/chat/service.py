@@ -27,9 +27,10 @@ def _notify_chat(db: Session, user_id: int, user_product_id: int, reply: str):
         from app.notifications.service import send_push_to_user
         up = db.query(UserProduct).filter(UserProduct.user_product_id == user_product_id).first()
         product = db.query(Product).filter(Product.product_id == up.product_id).first() if up else None
-        title = product.product_name if product else "또바바"
+        product_name = product.product_name if product else ""
         preview = reply[:50] + "..." if len(reply) > 50 else reply
-        send_push_to_user(db, user_id, title=title, body=preview, save_to_inbox=True, notification_type="chat", user_product_id=user_product_id)
+        body = f"[{product_name}] {preview}" if product_name else preview
+        send_push_to_user(db, user_id, title="또바", body=body, save_to_inbox=True, notification_type="chat", user_product_id=user_product_id)
     except Exception as e:
         _logger.warning(f"채팅 FCM 알림 실패 (user={user_id}): {e}")
 

@@ -166,6 +166,12 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
 # ── 인증 엔드포인트 ───────────────────────────────────────────────
 
 # 1. 회원가입
+@router.get("/auth/check-email", summary="이메일 중복 확인", responses=_200({"available": True}))
+def check_email(email: str, db: Session = Depends(get_db)):
+    exists = db.query(models.User).filter(models.User.email == email).first()
+    return success({"available": not bool(exists)})
+
+
 @router.post("/auth/signup", summary="이메일 회원가입", responses=_200({"userId": 1, "email": "user@example.com", "nickname": "또바바"}))
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()

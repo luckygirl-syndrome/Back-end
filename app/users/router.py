@@ -33,10 +33,7 @@ def get_current_user(token: str = Depends(api_key_header), db: Session = Depends
     if not payload:
         raise HTTPException(status_code=401, detail="인증 실패")
     user_id = payload.get("sub")
-    user = db.query(models.User).filter(
-        models.User.user_id == int(user_id),
-        models.User.deleted_at.is_(None),
-    ).first()
+    user = db.query(models.User).filter(models.User.user_id == int(user_id)).first()
     if not user:
         raise HTTPException(status_code=401, detail="유저 없음")
     return user
@@ -138,19 +135,13 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
         provider=provider, social_id=social_id
     ).first()
     if link:
-        user = db.query(models.User).filter(
-            models.User.user_id == link.user_id,
-            models.User.deleted_at.is_(None),
-        ).first()
-        if not user:
-            raise HTTPException(status_code=401, detail="탈퇴한 계정입니다.")
+        user = db.query(models.User).filter_by(user_id=link.user_id).first()
         return user, False
 
     # 2. 구 컬럼에서 조회 (마이그레이션)
     old_user = db.query(models.User).filter(
         models.User.social_id == social_id,
         models.User.social_provider == provider,
-        models.User.deleted_at.is_(None),
     ).first()
     if old_user:
         db.add(models.UserSocialProvider(user_id=old_user.user_id, provider=provider, social_id=social_id))
@@ -159,10 +150,7 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
 
     # 3. 신규 가입
     if email:
-        email_conflict = db.query(models.User).filter(
-            models.User.email == email,
-            models.User.deleted_at.is_(None),
-        ).first()
+        email_conflict = db.query(models.User).filter_by(email=email).first()
         if email_conflict:
             raise HTTPException(status_code=400, detail="이미 해당 이메일로 가입된 계정입니다. 기존 로그인 방식을 이용해주세요.")
 
@@ -180,10 +168,7 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
 # 1. 회원가입
 @router.post("/auth/signup", summary="이메일 회원가입", responses=_200({"userId": 1, "email": "user@example.com", "nickname": "또바바"}))
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(
-        models.User.email == user.email,
-        models.User.deleted_at.is_(None),
-    ).first()
+    db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
     new_user = models.User(
@@ -204,10 +189,7 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
 # 2. 로그인
 @router.post("/auth/login", summary="이메일 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer"}))
 def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(
-        models.User.email == user_data.email,
-        models.User.deleted_at.is_(None),
-    ).first()
+    user = db.query(models.User).filter(models.User.email == user_data.email).first()
     if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=401, detail="로그인 정보가 올바르지 않습니다.")
     access_token = create_access_token(data={"sub": str(user.user_id)})
@@ -383,14 +365,30 @@ def get_closet_stats(db: Session = Depends(get_db), current_user: models.User = 
 
 
 # 회원 탈퇴
-@router.delete("/users/me", summary="회원 탈퇴 (소프트 딜리트)", responses=_200(None))
+@router.delete("/users/me", summary="회원 탈퇴", responses=_200(None))
 def delete_my_account(
     db: Session = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
-    current_user.deleted_at = datetime.utcnow()
-    db.commit()
+    from app.chat.models import Chat
+    from app.notifications.models import Notification, FcmToken
+
+    user_id = current_user.user_id
+
     if posthog_client:
-        posthog_client.capture(distinct_id=str(current_user.user_id), event="user_deleted")
+        posthog_client.capture(distinct_id=str(user_id), event="user_deleted")
+
+    # 관련 데이터 순서대로 삭제 (FK 의존성 고려)
+    up_ids = [row[0] for row in db.query(UserProduct.user_product_id).filter(UserProduct.user_id == user_id).all()]
+    if up_ids:
+        db.query(Chat).filter(Chat.user_product_id.in_(up_ids)).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.user_product_id.in_(up_ids)).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.user_id == user_id).delete(synchronize_session=False)
+    db.query(FcmToken).filter(FcmToken.user_id == user_id).delete(synchronize_session=False)
+    db.query(UserProduct).filter(UserProduct.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.UserSocialProvider).filter(models.UserSocialProvider.user_id == user_id).delete(synchronize_session=False)
+    db.delete(current_user)
+    db.commit()
+
     return success(None)
 

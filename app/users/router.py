@@ -159,7 +159,10 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
 
     # 3. 신규 가입
     if email:
-        email_conflict = db.query(models.User).filter_by(email=email).first()
+        email_conflict = db.query(models.User).filter(
+            models.User.email == email,
+            models.User.deleted_at.is_(None),
+        ).first()
         if email_conflict:
             raise HTTPException(status_code=400, detail="이미 해당 이메일로 가입된 계정입니다. 기존 로그인 방식을 이용해주세요.")
 
@@ -177,7 +180,10 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
 # 1. 회원가입
 @router.post("/auth/signup", summary="이메일 회원가입", responses=_200({"userId": 1, "email": "user@example.com", "nickname": "또바바"}))
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = db.query(models.User).filter(models.User.email == user.email).first()
+    db_user = db.query(models.User).filter(
+        models.User.email == user.email,
+        models.User.deleted_at.is_(None),
+    ).first()
     if db_user:
         raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
     new_user = models.User(

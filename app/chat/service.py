@@ -405,7 +405,11 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
         {"role": "user", "content": FIRST_TURN_TRIGGER},
     ]
 
-    reply = await asyncio.to_thread(call_deepseek, messages)
+    try:
+        reply = await asyncio.to_thread(call_deepseek, messages)
+    except Exception as e:
+        _logger.error(f"[GREET] DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
+        return None
     _save_message(db, user_id, user_product_id, "assistant", reply)
     _notify_chat(db, user_id, user_product_id, reply)
     return {"reply": reply, "is_exit": False, "final_code": None}
@@ -415,6 +419,7 @@ async def send_message(
     db: Session, user_product_id: int, user_id: int, message: str
 ) -> Optional[dict]:
     from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
+    from fastapi import HTTPException
 
     up = (
         db.query(UserProduct)
@@ -424,13 +429,28 @@ async def send_message(
     if not up or not up.prompt_data:
         return None
 
+    # 이미 종료된 채팅방은 메시지 전송 차단
+    if up.final_code is not None:
+        raise HTTPException(status_code=400, detail="이미 종료된 채팅입니다.")
+
     system_prompt = build_system_prompt(up.prompt_data)
     history = _build_history(db, user_product_id)
 
     _save_message(db, user_id, user_product_id, "user", message)
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": message}]
 
-    reply = await asyncio.to_thread(call_deepseek, messages)
+    try:
+        reply = await asyncio.to_thread(call_deepseek, messages)
+    except Exception as e:
+        _logger.error(f"DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
+        # 저장한 유저 메시지 rollback
+        db.query(Chat).filter(
+            Chat.user_product_id == user_product_id,
+            Chat.role == "user",
+            Chat.content == message,
+        ).order_by(Chat.chat_id.desc()).limit(1).delete(synchronize_session=False)
+        db.commit()
+        raise HTTPException(status_code=503, detail="AI 응답 생성에 실패했습니다. 다시 시도해주세요.")
 
     final_code = _parse_code(reply)
     clean_reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
@@ -453,7 +473,6 @@ async def send_message(
 
 async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional[dict]:
     from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
-    import logging as _logging
 
     up = (
         db.query(UserProduct)
@@ -463,14 +482,24 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
     if not up or not up.prompt_data:
         return None
 
+    # 이미 종료된 경우 기존 값 그대로 반환 (중복 호출 방지)
+    if up.final_code is not None:
+        return {
+            "finalCode": up.final_code,
+            "finalScore": up.final_score,
+        }
+
     system_prompt = build_system_prompt(up.prompt_data)
     history = _build_history(db, user_product_id)
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": EXIT_TRIGGER}]
 
-    reply = await asyncio.to_thread(call_deepseek, messages)
-
-    final_code = _parse_code(reply)
-    _logging.getLogger(__name__).info(f"[EXIT] raw reply: {repr(reply)} | parsed code: {final_code}")
+    try:
+        reply = await asyncio.to_thread(call_deepseek, messages)
+        final_code = _parse_code(reply)
+        _logger.info(f"[EXIT] raw reply: {repr(reply)} | parsed code: {final_code}")
+    except Exception as e:
+        _logger.error(f"[EXIT] DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
+        final_code = None
 
     if not final_code:
         final_code = "NEUTRAL_EXPLORING"

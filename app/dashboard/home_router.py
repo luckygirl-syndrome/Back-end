@@ -96,12 +96,13 @@ def get_receipt_detail(
     }),
 )
 def get_stats(
+    period: str = "3m",
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     try:
         user_id = current_user.user_id
-        return service.get_stats(db, user_id)
+        return service.get_stats(db, user_id, period=period)
     except Exception as e:
         print("stats error:", e)
         raise HTTPException(status_code=500, detail="통계 데이터를 불러오지 못했어.")

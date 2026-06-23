@@ -120,7 +120,20 @@ def get_receipt_detail(db: Session, user_id: int, user_product_id: int) -> schem
         data=data
     )
 
-def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
+def _parse_period(period: str) -> datetime:
+    """'1m', '3m', '6m', '1y' → 기준 datetime 반환"""
+    now = datetime.now()
+    mapping = {
+        "1m": timedelta(days=30),
+        "3m": timedelta(days=90),
+        "6m": timedelta(days=180),
+        "1y": timedelta(days=365),
+    }
+    delta = mapping.get(period, timedelta(days=90))
+    return now - delta
+
+
+def get_stats(db: Session, user_id: int, period: str = "3m") -> schemas.StatsResponse:
     """홈 통계: 최근 또바바 점수 4개 + 구매 전환율 + 소비 만족도"""
     # 최근 또바바 점수 4개 (final_score 있는 것만, 최신순)
     recent_rows = (
@@ -152,18 +165,19 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
         UserProduct.status == "PURCHASED",
     ).count()
 
-    # 소비 만족도: 최근 3개월 구매 확정 (반품 포함)
+    # 소비 만족도: 선택한 기간 내 구매 확정 (반품 포함)
+    period_start = _parse_period(period)
     feedback_total = db.query(UserProduct).filter(
         UserProduct.user_id == user_id,
         UserProduct.status.in_(["PURCHASED", "RETURNED"]),
-        UserProduct.completed_at >= three_months_ago,
+        UserProduct.completed_at >= period_start,
     ).count()
 
     satisfied_count = db.query(UserProduct).filter(
         UserProduct.user_id == user_id,
         UserProduct.status == "PURCHASED",
         UserProduct.satisfaction.in_(["이정도면괜찮죠", "최고에요"]),
-        UserProduct.completed_at >= three_months_ago,
+        UserProduct.completed_at >= period_start,
     ).count()
 
     # 구매 후 7일 이상 & 리뷰 없는 상품 중 가장 오래된 1개

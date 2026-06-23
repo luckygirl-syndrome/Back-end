@@ -401,7 +401,7 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
         .order_by(Chat.chat_id.asc())
         .first()
     )
-    if existing:
+    if existing and existing.content:
         return {"reply": existing.content, "is_exit": False, "final_code": None}
 
     system_prompt = build_system_prompt(up.prompt_data)

@@ -53,6 +53,8 @@ def _verify_google_token(id_token: str) -> dict:
 
 def _verify_kakao_token(id_token: str) -> dict:
     try:
+        unverified = jose_jwt.get_unverified_claims(id_token)
+        logger.info(f"[카카오 토큰 aud] {unverified.get('aud')} / 설정값: {settings.KAKAO_NATIVE_APP_KEY}")
         jwks = httpx.get("https://kauth.kakao.com/.well-known/jwks.json").json()
         kid = jose_jwt.get_unverified_header(id_token).get("kid")
         public_key = next((k for k in jwks["keys"] if k["kid"] == kid), None)
@@ -164,6 +166,12 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
 # ── 인증 엔드포인트 ───────────────────────────────────────────────
 
 # 1. 회원가입
+@router.get("/auth/check-email", summary="이메일 중복 확인", responses=_200({"available": True}))
+def check_email(email: str, db: Session = Depends(get_db)):
+    exists = db.query(models.User).filter(models.User.email == email).first()
+    return success({"available": not bool(exists)})
+
+
 @router.post("/auth/signup", summary="이메일 회원가입", responses=_200({"userId": 1, "email": "user@example.com", "nickname": "또바바"}))
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
@@ -253,58 +261,11 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
     return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
 
 
-# ── 소셜 연동/해제 ────────────────────────────────────────────────
-
-# 소셜 계정 연동
-@router.post("/setting/social/link", summary="소셜 계정 연동", responses=_200(None))
-def link_social(body: schemas.SocialLinkRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    already = db.query(models.UserSocialProvider).filter_by(
-        user_id=current_user.user_id, provider=body.provider
-    ).first()
-    if already:
-        raise HTTPException(status_code=400, detail=f"이미 {body.provider} 계정이 연결되어 있습니다.")
-
-    payload = _verify_token_by_provider(body.provider, body.id_token)
-    info = _extract_social_info(body.provider, payload)
-    social_id = info["social_id"]
-    if not social_id:
-        raise HTTPException(status_code=400, detail="소셜 토큰에서 유저 정보를 가져올 수 없습니다.")
-
-    conflict = db.query(models.UserSocialProvider).filter_by(
-        provider=body.provider, social_id=social_id
-    ).first()
-    if conflict:
-        raise HTTPException(status_code=400, detail="이미 다른 계정에 연결된 소셜 계정입니다.")
-
-    db.add(models.UserSocialProvider(user_id=current_user.user_id, provider=body.provider, social_id=social_id))
-    db.commit()
-    return success(message=f"{body.provider} 계정이 연결되었습니다.")
-
-
-# 소셜 계정 해제
-@router.delete("/setting/social/unlink", summary="소셜 계정 해제", responses=_200(None))
-def unlink_social(body: schemas.SocialUnlinkRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    providers = db.query(models.UserSocialProvider).filter_by(user_id=current_user.user_id).all()
-    has_password = bool(current_user.password)
-
-    if len(providers) <= 1 and not has_password:
-        raise HTTPException(status_code=400, detail="마지막 로그인 수단입니다. 해제할 수 없습니다.")
-
-    link = db.query(models.UserSocialProvider).filter_by(
-        user_id=current_user.user_id, provider=body.provider
-    ).first()
-    if not link:
-        raise HTTPException(status_code=400, detail="연결된 계정이 없습니다.")
-
-    db.delete(link)
-    db.commit()
-    return success(message=f"{body.provider} 연결이 해제되었습니다.")
-
 
 # ── 프로필 ────────────────────────────────────────────────────────
 
 # 내 프로필 조회
-@router.get("/profile", summary="내 프로필 조회", responses=_200({"nickname": "또바바", "profileImg": "3", "fbtiName": "도파민 쇼퍼"}))
+@router.get("/profile", summary="내 프로필 조회", responses=_200({"nickname": "또바바", "profileImg": "3", "fbtiName": "도파민 쇼퍼", "initialQDone": True}))
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
     fbti_name = ""
     profile_img = str(current_user.profile_img) if current_user.profile_img else "1"
@@ -323,17 +284,10 @@ def get_my_profile(current_user: models.User = Depends(get_current_user)):
     return success({
         "nickname": current_user.nickname,
         "profileImg": profile_img,
+        "initialQDone": current_user.age_group is not None,
         "fbtiName": fbti_name,
     })
 
-
-# 닉네임 수정
-@router.patch("/setting/nickname", summary="닉네임 수정", responses=_200({"nickname": "새닉네임"}))
-def update_nickname(data: schemas.NicknameUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
-    current_user.nickname = data.nickname
-    db.commit()
-    db.refresh(current_user)
-    return success({"nickname": current_user.nickname})
 
 
 # FBTI 결과 저장
@@ -417,47 +371,31 @@ def get_closet_stats(db: Session = Depends(get_db), current_user: models.User = 
     })
 
 
-# ── 설정 ──────────────────────────────────────────────────────────
+# 회원 탈퇴
+@router.delete("/users/me", summary="회원 탈퇴", responses=_200(None))
+def delete_my_account(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    from app.chat.models import Chat
+    from app.notifications.models import Notification, FcmToken
 
-# 계정 정보 조회
-@router.get("/setting/account", summary="계정 정보 조회", responses=_200({"email": "user@example.com", "socialProviders": ["google"], "hasPassword": False}))
-def get_account(current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    providers = db.query(models.UserSocialProvider).filter_by(user_id=current_user.user_id).all()
-    provider_list = [p.provider for p in providers]
-    # 구 컬럼 폴백
-    if current_user.social_provider and current_user.social_provider not in provider_list:
-        provider_list.append(current_user.social_provider)
-    return success({
-        "email": current_user.email,
-        "socialProviders": provider_list,
-        "hasPassword": bool(current_user.password),
-    })
+    user_id = current_user.user_id
 
+    if posthog_client:
+        posthog_client.capture(distinct_id=str(user_id), event="user_deleted")
 
-# 문의하기
-@router.post("/setting/inquiry", summary="문의하기", responses=_200(None))
-def create_inquiry(body: schemas.InquiryCreate, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    inquiry = models.Inquiry(user_id=current_user.user_id, content=body.content, reply_email=body.reply_email)
-    db.add(inquiry)
+    # 관련 데이터 순서대로 삭제 (FK 의존성 고려)
+    up_ids = [row[0] for row in db.query(UserProduct.user_product_id).filter(UserProduct.user_id == user_id).all()]
+    if up_ids:
+        db.query(Chat).filter(Chat.user_product_id.in_(up_ids)).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.user_product_id.in_(up_ids)).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.user_id == user_id).delete(synchronize_session=False)
+    db.query(FcmToken).filter(FcmToken.user_id == user_id).delete(synchronize_session=False)
+    db.query(UserProduct).filter(UserProduct.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.UserSocialProvider).filter(models.UserSocialProvider.user_id == user_id).delete(synchronize_session=False)
+    db.delete(current_user)
     db.commit()
-    return success(message="문의가 접수되었습니다.")
 
+    return success(None)
 
-# 비밀번호 확인
-@router.post("/setting/password/verify", summary="현재 비밀번호 확인", responses=_200(None))
-def verify_password_endpoint(body: schemas.PasswordVerify, current_user: models.User = Depends(get_current_user)):
-    if not current_user.password:
-        raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호가 없습니다.")
-    if not verify_password(body.current_password, current_user.password):
-        raise HTTPException(status_code=400, detail="현재 비밀번호가 올바르지 않습니다.")
-    return success(message="비밀번호 확인 완료.")
-
-
-# 비밀번호 변경
-@router.patch("/setting/password", summary="비밀번호 변경", responses=_200(None))
-def change_password(body: schemas.PasswordChange, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
-    if not current_user.password:
-        raise HTTPException(status_code=400, detail="소셜 로그인 계정은 비밀번호가 없습니다.")
-    current_user.password = hash_password(body.new_password)
-    db.commit()
-    return success(message="비밀번호가 변경되었습니다.")

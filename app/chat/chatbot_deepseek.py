@@ -16,7 +16,7 @@ def _get_client() -> OpenAI:
         api_key = os.getenv("DEEPSEEK_API_KEY")
         if not api_key:
             raise ValueError("DEEPSEEK_API_KEY가 .env 파일에 없어. 확인해줘.")
-        _client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com")
+        _client = OpenAI(api_key=api_key, base_url="https://api.deepseek.com", timeout=60.0)
     return _client
 
 

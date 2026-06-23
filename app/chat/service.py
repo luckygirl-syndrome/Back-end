@@ -1,10 +1,10 @@
 import asyncio
-import base64
 import functools
 import json
 import re
 import shutil
 import tempfile
+from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
@@ -21,12 +21,16 @@ import logging as _logging
 _logger = _logging.getLogger(__name__)
 
 
-def _notify_chat(db: Session, user_id: int, reply: str):
-    """또바 메시지 → FCM 푸시 + 알림함 저장"""
+def _notify_chat(db: Session, user_id: int, user_product_id: int, reply: str):
+    """또바 메시지 → FCM 푸시 + 알림함 저장 (항상 발송, 포그라운드 처리는 프론트에서)"""
     try:
         from app.notifications.service import send_push_to_user
+        up = db.query(UserProduct).filter(UserProduct.user_product_id == user_product_id).first()
+        product = db.query(Product).filter(Product.product_id == up.product_id).first() if up else None
+        product_name = product.product_name if product else ""
         preview = reply[:50] + "..." if len(reply) > 50 else reply
-        send_push_to_user(db, user_id, title="또바", body=preview, save_to_inbox=False)
+        body = f"[{product_name}] {preview}" if product_name else preview
+        send_push_to_user(db, user_id, title="또바", body=body, save_to_inbox=True, notification_type="chat", user_product_id=user_product_id)
     except Exception as e:
         _logger.warning(f"채팅 FCM 알림 실패 (user={user_id}): {e}")
 
@@ -56,9 +60,7 @@ FIRST_TURN_TRIGGER = "대화를 시작해줘. 첫 답변 규칙에 따라 2문�
 EXIT_TRIGGER = (
     "대화가 [EXIT] 신호로 종료됩니다. "
     "전체 대화에서 드러난 유저의 구매 판단 태도를 분석하고, "
-    "또바의 마지막 한마디를 1~2문장으로 먼저 작성해. "
-    "따뜻하고 간결하게, 친구처럼 마무리해줘. "
-    "마지막 줄에는 반드시 'CODE: 코드명' 형식으로 코드를 출력해."
+    "반드시 'CODE: 코드명' 형식으로만 출력해."
 )
 
 
@@ -126,10 +128,12 @@ async def analyze_and_create_session(
     tmp_img_dir = Path(tempfile.mkdtemp())
     tmp_out_dir = Path(tempfile.mkdtemp())
 
+    from app.core.s3 import upload_image
+
     try:
-        # 이미지 임시 저장 + base64 인코딩
+        # 이미지 임시 저장 + S3 업로드
         image_paths = []
-        image_b64_list = []
+        image_url_list = []
         for i, img in enumerate(images):
             content = await img.read()
             suffix = Path(img.filename or "image.jpg").suffix or ".jpg"
@@ -137,8 +141,8 @@ async def analyze_and_create_session(
             path = tmp_img_dir / f"img_{i}{suffix}"
             path.write_bytes(content)
             image_paths.append(path)
-            b64 = base64.b64encode(content).decode("utf-8")
-            image_b64_list.append(f"data:{mime};base64,{b64}")
+            url = await asyncio.to_thread(upload_image, content, mime)
+            image_url_list.append(url)
 
         # Gemini 호출은 동기 함수라 스레드풀에서 실행
         run_fn = functools.partial(
@@ -169,7 +173,7 @@ async def analyze_and_create_session(
         product_name=product_name,
         price=price,
         discount_rate=discount_rate,
-        product_img=json.dumps(image_b64_list, ensure_ascii=False),
+        product_img=json.dumps(image_url_list, ensure_ascii=False),
     )
     db.add(product)
     db.flush()
@@ -197,28 +201,89 @@ async def analyze_and_create_session(
         "user_type": result.get("user_type", {}),
         "impulse_score": impulse_score,
         "match_score": match_score,
-        "product_img": image_b64_list[0] if image_b64_list else None,
-        "product_imgs": image_b64_list,
+        "product_img": image_url_list[0] if image_url_list else None,
+        "product_imgs": image_url_list,
     }
 
 
-def get_chat_list(db: Session, user_id: int) -> List[dict]:
-    user_products = (
-        db.query(UserProduct)
-        .filter(UserProduct.user_id == user_id)
-        .order_by(UserProduct.requested_at.desc())
-        .all()
+def get_chat_list(db: Session, user_id: int, cursor: Optional[int] = None, size: int = 20, sort: str = "newest") -> dict:
+    from sqlalchemy import select, func, and_
+    from sqlalchemy.orm import load_only
+
+    if sort in ("price_asc", "price_desc"):
+        query = (
+            db.query(UserProduct, Product)
+            .join(Product, UserProduct.product_id == Product.product_id)
+            .filter(UserProduct.user_id == user_id)
+            .filter(UserProduct.is_hidden.isnot(True))
+        )
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id < cursor)
+        order = (Product.price.asc(), UserProduct.user_product_id.desc()) if sort == "price_asc" \
+            else (Product.price.desc(), UserProduct.user_product_id.desc())
+        rows = query.order_by(*order).limit(size + 1).all()
+        has_next = len(rows) > size
+        rows = rows[:size]
+        if not rows:
+            return {"items": [], "nextCursor": None, "hasNext": False}
+        user_products = [up for up, _ in rows]
+        product_map = {prod.product_id: prod for _, prod in rows}
+    else:
+        query = db.query(UserProduct).filter(UserProduct.user_id == user_id, UserProduct.is_hidden.isnot(True))
+        if sort == "oldest":
+            if cursor is not None:
+                query = query.filter(UserProduct.user_product_id > cursor)
+            order = UserProduct.user_product_id.asc()
+        else:
+            if cursor is not None:
+                query = query.filter(UserProduct.user_product_id < cursor)
+            order = UserProduct.user_product_id.desc()
+        user_products = query.order_by(order).limit(size + 1).all()
+        has_next = len(user_products) > size
+        user_products = user_products[:size]
+        if not user_products:
+            return {"items": [], "nextCursor": None, "hasNext": False}
+        product_ids = [up.product_id for up in user_products]
+        products = (
+            db.query(Product)
+            .filter(Product.product_id.in_(product_ids))
+            .options(load_only(Product.product_id, Product.product_name, Product.price, Product.product_img))
+            .all()
+        )
+        product_map = {p.product_id: p for p in products}
+
+    user_product_ids = [up.user_product_id for up in user_products]
+
+    # 채팅방별 마지막 assistant 메시지 한 번에 조회
+    subq = (
+        select(
+            Chat.user_product_id,
+            func.max(Chat.created_at).label("last_at"),
+        )
+        .where(
+            and_(
+                Chat.user_product_id.in_(user_product_ids),
+                Chat.role == "assistant",
+            )
+        )
+        .group_by(Chat.user_product_id)
+        .subquery()
     )
+    last_msg_rows = db.execute(select(subq)).fetchall()
+    last_msg_map = {row.user_product_id: row.last_at for row in last_msg_rows}
 
     items = []
     for up in user_products:
-        product = db.query(Product).filter(Product.product_id == up.product_id).first()
+        product = product_map.get(up.product_id)
         raw_img = product.product_img if product else None
         try:
             img_list = json.loads(raw_img) if raw_img else []
             thumbnail = img_list[0] if img_list else None
         except Exception:
             thumbnail = raw_img
+
+        last_at = last_msg_map.get(up.user_product_id)
+        has_unread = bool(last_at and (up.last_read_at is None or last_at > up.last_read_at))
 
         items.append({
             "user_product_id": up.user_product_id,
@@ -230,8 +295,11 @@ def get_chat_list(db: Session, user_id: int) -> List[dict]:
             "impulse_score": up.impulse_score,
             "match_score": up.preference_score,
             "requested_at": up.requested_at.isoformat() if up.requested_at else None,
+            "has_unread": has_unread,
         })
-    return items
+
+    next_cursor = user_products[-1].user_product_id if has_next else None
+    return {"items": items, "nextCursor": next_cursor, "hasNext": has_next}
 
 
 def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[dict]:
@@ -243,10 +311,16 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
         )
         .first()
     )
-    if not up:
+    if not up or up.is_hidden:
         return None
 
-    product = db.query(Product).filter(Product.product_id == up.product_id).first()
+    from sqlalchemy.orm import load_only
+    product = (
+        db.query(Product)
+        .filter(Product.product_id == up.product_id)
+        .options(load_only(Product.product_name, Product.price, Product.product_img))
+        .first()
+    )
 
     messages = (
         db.query(Chat)
@@ -274,7 +348,7 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
         "finalScore": up.final_score,
         "impulse_score": up.impulse_score,
         "match_score": up.preference_score,
-        "prompt_data": up.prompt_data,
+        "hasReview": up.review is not None,
         "messages": [
             {
                 "role": m.role,
@@ -284,6 +358,14 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
             for m in messages
         ],
     }
+
+
+def mark_chat_read(db: Session, user_product_id: int, user_id: int) -> None:
+    db.query(UserProduct).filter(
+        UserProduct.user_product_id == user_product_id,
+        UserProduct.user_id == user_id,
+    ).update({"last_read_at": datetime.now()})
+    db.commit()
 
 
 def _build_history(db: Session, user_product_id: int) -> list:
@@ -315,7 +397,7 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
     # 이미 메시지가 있으면 중복 생성 방지
     existing = db.query(Chat).filter(Chat.user_product_id == user_product_id).first()
     if existing:
-        return {"reply": existing.content, "is_exit": False, "final_code": None}
+        return {"reply": None, "is_exit": False, "final_code": None}
 
     system_prompt = build_system_prompt(up.prompt_data)
     messages = [
@@ -323,9 +405,13 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
         {"role": "user", "content": FIRST_TURN_TRIGGER},
     ]
 
-    reply = await asyncio.to_thread(call_deepseek, messages)
+    try:
+        reply = await asyncio.to_thread(call_deepseek, messages)
+    except Exception as e:
+        _logger.error(f"[GREET] DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
+        return None
     _save_message(db, user_id, user_product_id, "assistant", reply)
-    _notify_chat(db, user_id, reply)
+    _notify_chat(db, user_id, user_product_id, reply)
     return {"reply": reply, "is_exit": False, "final_code": None}
 
 
@@ -333,6 +419,7 @@ async def send_message(
     db: Session, user_product_id: int, user_id: int, message: str
 ) -> Optional[dict]:
     from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
+    from fastapi import HTTPException
 
     up = (
         db.query(UserProduct)
@@ -342,19 +429,34 @@ async def send_message(
     if not up or not up.prompt_data:
         return None
 
+    # 이미 종료된 채팅방은 메시지 전송 차단
+    if up.final_code is not None:
+        raise HTTPException(status_code=400, detail="이미 종료된 채팅입니다.")
+
     system_prompt = build_system_prompt(up.prompt_data)
     history = _build_history(db, user_product_id)
 
     _save_message(db, user_id, user_product_id, "user", message)
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": message}]
 
-    reply = await asyncio.to_thread(call_deepseek, messages)
+    try:
+        reply = await asyncio.to_thread(call_deepseek, messages)
+    except Exception as e:
+        _logger.error(f"DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
+        # 저장한 유저 메시지 rollback
+        db.query(Chat).filter(
+            Chat.user_product_id == user_product_id,
+            Chat.role == "user",
+            Chat.content == message,
+        ).order_by(Chat.chat_id.desc()).limit(1).delete(synchronize_session=False)
+        db.commit()
+        raise HTTPException(status_code=503, detail="AI 응답 생성에 실패했습니다. 다시 시도해주세요.")
 
     final_code = _parse_code(reply)
     clean_reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
 
     _save_message(db, user_id, user_product_id, "assistant", clean_reply)
-    _notify_chat(db, user_id, clean_reply)
+    _notify_chat(db, user_id, user_product_id, clean_reply)
 
     if final_code:
         up.final_code = final_code
@@ -371,7 +473,6 @@ async def send_message(
 
 async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional[dict]:
     from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
-    import logging as _logging
 
     up = (
         db.query(UserProduct)
@@ -381,17 +482,24 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
     if not up or not up.prompt_data:
         return None
 
+    # 이미 종료된 경우 기존 값 그대로 반환 (중복 호출 방지)
+    if up.final_code is not None:
+        return {
+            "finalCode": up.final_code,
+            "finalScore": up.final_score,
+        }
+
     system_prompt = build_system_prompt(up.prompt_data)
     history = _build_history(db, user_product_id)
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": EXIT_TRIGGER}]
 
-    reply = await asyncio.to_thread(call_deepseek, messages)
-
-    final_code = _parse_code(reply)
-    _logging.getLogger(__name__).info(f"[EXIT] raw reply: {repr(reply)} | parsed code: {final_code}")
-
-    # CODE 줄 제거 → 나머지가 마지막 멘트
-    last_message = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
+    try:
+        reply = await asyncio.to_thread(call_deepseek, messages)
+        final_code = _parse_code(reply)
+        _logger.info(f"[EXIT] raw reply: {repr(reply)} | parsed code: {final_code}")
+    except Exception as e:
+        _logger.error(f"[EXIT] DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
+        final_code = None
 
     if not final_code:
         final_code = "NEUTRAL_EXPLORING"
@@ -400,12 +508,7 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
     up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
     db.commit()
 
-    # 마지막 멘트 DB 저장
-    if last_message:
-        _save_message(db, user_id, user_product_id, "assistant", last_message)
-
     return {
-        "reply": last_message or None,
         "finalCode": final_code,
         "finalScore": up.final_score,
     }

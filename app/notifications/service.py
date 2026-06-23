@@ -27,21 +27,29 @@ def _send_to_token(token: str, title: str, body: str) -> bool:
             token=token,
         )
         messaging.send(message)
+        logger.info(f"FCM 발송 성공 (token={token[:20]}...)")
         return True
-    except firebase_admin.exceptions.FirebaseError as e:
+    except Exception as e:
         logger.error(f"FCM 발송 실패 (token={token[:20]}...): {e}")
         return False
 
 
-def send_push_to_user(db: Session, user_id: int, title: str, body: str, save_to_inbox: bool = False):
+def send_push_to_user(db: Session, user_id: int, title: str, body: str, save_to_inbox: bool = False, notification_type: str = "chat", user_product_id: int = None):
     tokens = db.query(FcmToken).filter(FcmToken.user_id == user_id).all()
+    logger.info(f"FCM 발송 시도 (user={user_id}, 토큰 수={len(tokens)})")
     for fcm_token in tokens:
         _send_to_token(fcm_token.token, title, body)
 
     if save_to_inbox:
-        notification = Notification(user_id=user_id, title=title, body=body)
+        notification = Notification(user_id=user_id, title=title, body=body, notification_type=notification_type, user_product_id=user_product_id)
         db.add(notification)
         db.commit()
+
+
+def broadcast_announcement(db: Session, title: str, body: str):
+    user_ids = [row[0] for row in db.query(FcmToken.user_id).distinct().all()]
+    for user_id in user_ids:
+        send_push_to_user(db, user_id, title, body, save_to_inbox=True, notification_type="announcement")
 
 
 def register_token(db: Session, user_id: int, token: str, device_type: str = "ios"):
@@ -62,14 +70,30 @@ def delete_token(db: Session, user_id: int, token: str):
     db.commit()
 
 
-def get_notifications(db: Session, user_id: int) -> list[Notification]:
-    return (
-        db.query(Notification)
+def get_notifications(db: Session, user_id: int) -> list[dict]:
+    from app.products.models import UserProduct, Product
+    rows = (
+        db.query(Notification, Product.product_name)
+        .outerjoin(UserProduct, Notification.user_product_id == UserProduct.user_product_id)
+        .outerjoin(Product, UserProduct.product_id == Product.product_id)
         .filter(Notification.user_id == user_id)
         .order_by(Notification.created_at.desc())
         .limit(50)
         .all()
     )
+    result = []
+    for notif, product_name in rows:
+        result.append({
+            "id": notif.id,
+            "title": notif.title,
+            "body": notif.body,
+            "notification_type": notif.notification_type,
+            "user_product_id": notif.user_product_id,
+            "product_name": product_name,
+            "is_read": notif.is_read,
+            "created_at": notif.created_at,
+        })
+    return result
 
 
 def mark_read(db: Session, user_id: int, notification_id: int):

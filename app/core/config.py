@@ -22,11 +22,25 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     GOOGLE_CLIENT_ID: str = ""
     KAKAO_REST_API_KEY: str = ""
+    KAKAO_NATIVE_APP_KEY: str = ""
     APPLE_CLIENT_ID: str = ""
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     SENTRY_DSN: str = ""
     FIREBASE_CREDENTIALS_PATH: str = "firebase-credentials.json"
+    ADMIN_SECRET_KEY: str = ""
+    SMTP_HOST: str = "smtp.gmail.com"
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    EMAIL_FROM: str = ""
+    COOLSMS_API_KEY: str = ""
+    COOLSMS_API_SECRET: str = ""
+    COOLSMS_FROM: str = ""
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_S3_BUCKET: str = ""
+    AWS_S3_REGION: str = "us-east-1"
 
     @property
     def db_engine_kwargs(self):

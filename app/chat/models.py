@@ -1,6 +1,6 @@
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, BigInteger
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, BigInteger, Index
 from app.core.database import Base
-from datetime import datetime  # <--- 이 줄을 꼭 추가해줘!
+from datetime import datetime
 
 class Chat(Base):
     __tablename__ = "chat_log"
@@ -11,3 +11,7 @@ class Chat(Base):
     role = Column(String(20), nullable=False) # "user" / "assistant"
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.now)
+
+    __table_args__ = (
+        Index("ix_chat_log_user_product_id", "user_product_id"),
+    )

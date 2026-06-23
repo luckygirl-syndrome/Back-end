@@ -120,7 +120,20 @@ def get_receipt_detail(db: Session, user_id: int, user_product_id: int) -> schem
         data=data
     )
 
-def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
+def _parse_period(period: str) -> datetime:
+    """'1m', '3m', '6m', '1y' → 기준 datetime 반환"""
+    now = datetime.now()
+    mapping = {
+        "1m": timedelta(days=30),
+        "3m": timedelta(days=90),
+        "6m": timedelta(days=180),
+        "1y": timedelta(days=365),
+    }
+    delta = mapping.get(period, timedelta(days=90))
+    return now - delta
+
+
+def get_stats(db: Session, user_id: int, period: str = "3m") -> schemas.StatsResponse:
     """홈 통계: 최근 또바바 점수 4개 + 구매 전환율 + 소비 만족도"""
     # 최근 또바바 점수 4개 (final_score 있는 것만, 최신순)
     recent_rows = (
@@ -152,17 +165,55 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
         UserProduct.status == "PURCHASED",
     ).count()
 
-    # 소비 만족도: 전체 구매 수 vs "만족" 포함 리뷰
+    # 소비 만족도: 선택한 기간 내 구매 확정 (반품 포함)
+    period_start = _parse_period(period)
     feedback_total = db.query(UserProduct).filter(
         UserProduct.user_id == user_id,
-        UserProduct.status == "PURCHASED",
+        UserProduct.status.in_(["PURCHASED", "RETURNED"]),
+        UserProduct.completed_at >= period_start,
     ).count()
 
     satisfied_count = db.query(UserProduct).filter(
         UserProduct.user_id == user_id,
         UserProduct.status == "PURCHASED",
-        UserProduct.review.ilike("%만족%"),
+        UserProduct.satisfaction.in_(["이정도면괜찮죠", "최고에요"]),
+        UserProduct.completed_at >= period_start,
     ).count()
+
+    # 구매 후 7일 이상 & 리뷰 없는 상품 중 가장 오래된 1개
+    seven_days_ago = datetime.now() - timedelta(days=7)
+    overdue_row = (
+        db.query(UserProduct, Product)
+        .join(Product, UserProduct.product_id == Product.product_id)
+        .filter(
+            UserProduct.user_id == user_id,
+            UserProduct.status == "PURCHASED",
+            UserProduct.review.is_(None),
+            UserProduct.review_nudge_dismissed.isnot(True),
+            UserProduct.completed_at.isnot(None),
+            UserProduct.completed_at <= seven_days_ago,
+        )
+        .order_by(UserProduct.completed_at.asc())
+        .first()
+    )
+
+    overdue_item = None
+    if overdue_row:
+        up, prod = overdue_row
+        days = (datetime.now() - up.completed_at).days
+        raw_img = prod.product_img
+        try:
+            img_list = __import__("json").loads(raw_img) if raw_img else []
+            thumbnail = img_list[0] if img_list else None
+        except Exception:
+            thumbnail = raw_img
+        overdue_item = schemas.OverdueReviewItem(
+            user_product_id=up.user_product_id,
+            product_name=prod.product_name,
+            product_img=thumbnail,
+            price=prod.price,
+            days_since_purchase=days,
+        )
 
     return schemas.StatsResponse(
         status="success",
@@ -176,11 +227,12 @@ def get_stats(db: Session, user_id: int) -> schemas.StatsResponse:
                 total=feedback_total,
                 satisfied=satisfied_count,
             ),
+            overdue_item=overdue_item,
         ),
     )
 
 
-def get_considering_items(db: Session, user_id: int) -> schemas.ConsideringListResponse:
+def get_considering_items(db: Session, user_id: int, cursor: int = None, size: int = 20, sort: str = "newest") -> schemas.ConsideringListResponse:
     """결정했나요? 목록 = 채팅에서 고민 중인 상품만, 상품별 최신 1건 (채팅 목록과 동일 방식)"""
     subquery = (
         db.query(
@@ -189,14 +241,14 @@ def get_considering_items(db: Session, user_id: int) -> schemas.ConsideringListR
         )
         .filter(UserProduct.user_id == user_id)
         .filter(UserProduct.product_id != 0)
-        .filter(UserProduct.is_purchased == 0)
+        .filter(UserProduct.is_purchased.isnot(True))
         .filter(
             (UserProduct.status == "PENDING") | (UserProduct.status == "FINISHED") | (UserProduct.status == "ANALYZING")
         )
         .group_by(UserProduct.product_id)
         .subquery()
     )
-    results = (
+    query = (
         db.query(UserProduct, Product)
         .join(Product, UserProduct.product_id == Product.product_id)
         .join(
@@ -205,31 +257,62 @@ def get_considering_items(db: Session, user_id: int) -> schemas.ConsideringListR
             & (UserProduct.updated_at == subquery.c.max_updated_at)
         )
         .filter(UserProduct.user_id == user_id)
-        .filter(UserProduct.is_purchased == 0)
+        .filter(UserProduct.is_purchased.isnot(True))
         .filter(
             (UserProduct.status == "PENDING") | (UserProduct.status == "FINISHED") | (UserProduct.status == "ANALYZING")
         )
-        .order_by(UserProduct.updated_at.desc(), UserProduct.user_product_id.desc())
-        .all()
     )
+    if sort == "oldest":
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id > cursor)
+        order = UserProduct.user_product_id.asc()
+    elif sort == "price_asc":
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id < cursor)
+        order = (Product.price.asc(), UserProduct.user_product_id.desc())
+    elif sort == "price_desc":
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id < cursor)
+        order = (Product.price.desc(), UserProduct.user_product_id.desc())
+    else:  # newest
+        if cursor is not None:
+            query = query.filter(UserProduct.user_product_id < cursor)
+        order = UserProduct.user_product_id.desc()
+
+    results = (
+        query
+        .order_by(*order) if isinstance(order, tuple) else query.order_by(order)
+    ).limit(size + 1).all()
+
+    has_next = len(results) > size
+    results = results[:size]
 
     items = []
     now = datetime.now()
     for up, prod in results:
-        duration_days = None
-        if up.requested_at:
-            duration_days = (now - up.requested_at).days
-
+        if not up.requested_at:
+            continue
+        duration_days = (now - up.requested_at).days
+        raw_img = prod.product_img
+        try:
+            import json
+            img_list = json.loads(raw_img) if raw_img else []
+            thumbnail = img_list[0] if img_list else None
+        except Exception:
+            thumbnail = raw_img
         items.append(schemas.ConsideringListItem(
             user_product_id=up.user_product_id,
             product_id=prod.product_id,
-            product_img=prod.product_img,
+            product_img=thumbnail,
             product_name=prod.product_name,
             price=prod.price,
             duration_days=duration_days
         ))
 
+    next_cursor = results[-1][0].user_product_id if has_next else None
     return schemas.ConsideringListResponse(
         status="success",
-        data=items
+        data=items,
+        nextCursor=next_cursor,
+        hasNext=has_next,
     )

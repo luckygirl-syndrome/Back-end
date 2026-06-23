@@ -1,5 +1,6 @@
 from pydantic import BaseModel
 from datetime import datetime
+from typing import Optional
 
 
 class FcmTokenRegister(BaseModel):
@@ -11,7 +12,15 @@ class NotificationOut(BaseModel):
     id: int
     title: str
     body: str
+    notification_type: str = "chat"
+    user_product_id: Optional[int] = None
+    product_name: Optional[str] = None
     is_read: bool
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class BroadcastRequest(BaseModel):
+    title: str
+    body: str

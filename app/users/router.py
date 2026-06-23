@@ -265,7 +265,7 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
 # ── 프로필 ────────────────────────────────────────────────────────
 
 # 내 프로필 조회
-@router.get("/profile", summary="내 프로필 조회", responses=_200({"nickname": "또바바", "profileImg": "3", "fbtiName": "도파민 쇼퍼"}))
+@router.get("/profile", summary="내 프로필 조회", responses=_200({"nickname": "또바바", "profileImg": "3", "fbtiName": "도파민 쇼퍼", "initialQDone": True}))
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
     fbti_name = ""
     profile_img = str(current_user.profile_img) if current_user.profile_img else "1"
@@ -284,6 +284,7 @@ def get_my_profile(current_user: models.User = Depends(get_current_user)):
     return success({
         "nickname": current_user.nickname,
         "profileImg": profile_img,
+        "initialQDone": current_user.age_group is not None,
         "fbtiName": fbti_name,
     })
 

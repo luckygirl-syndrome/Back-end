@@ -493,10 +493,12 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
     history = _build_history(db, user_product_id)
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": EXIT_TRIGGER}]
 
+    reply = None
     try:
-        reply = await asyncio.to_thread(call_deepseek, messages)
-        final_code = _parse_code(reply)
-        _logger.info(f"[EXIT] raw reply: {repr(reply)} | parsed code: {final_code}")
+        raw_reply = await asyncio.to_thread(call_deepseek, messages)
+        final_code = _parse_code(raw_reply)
+        _logger.info(f"[EXIT] raw reply: {repr(raw_reply)} | parsed code: {final_code}")
+        reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", raw_reply).strip()
     except Exception as e:
         _logger.error(f"[EXIT] DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
         final_code = None
@@ -504,11 +506,17 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
     if not final_code:
         final_code = "NEUTRAL_EXPLORING"
 
+    if reply:
+        _save_message(db, user_id, user_product_id, "assistant", reply)
+
     up.final_code = final_code
     up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
     db.commit()
 
+    _notify_chat(db, user_id, user_product_id, reply or "")
+
     return {
+        "reply": reply,
         "finalCode": final_code,
         "finalScore": up.final_score,
     }

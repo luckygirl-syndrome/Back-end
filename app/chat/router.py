@@ -173,6 +173,7 @@ async def send_message(
     summary="채팅 종료",
     description="채팅 종료하기 버튼을 누르면 호출합니다. LLM이 대화를 분석해 최종 CODE와 또바바 점수를 반환합니다.",
     responses=_200({
+        "reply": "오늘 대화 잘 했어. 결정이 어렵겠지만 네 마음이 답이야.",
         "finalCode": "BUY_CONFIDENT_GROUNDED",
         "finalScore": 73,
     }),

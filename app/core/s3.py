@@ -26,6 +26,7 @@ def upload_image(file_bytes: bytes, mime_type: str, folder: str = "products") ->
         Key=key,
         Body=file_bytes,
         ContentType=mime_type,
+        CacheControl="max-age=31536000, immutable",
     )
     return f"https://{settings.AWS_S3_BUCKET}.s3.{settings.AWS_S3_REGION}.amazonaws.com/{key}"
 

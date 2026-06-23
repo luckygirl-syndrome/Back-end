@@ -394,10 +394,15 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
     if not up or not up.prompt_data:
         return None
 
-    # 이미 메시지가 있으면 중복 생성 방지
-    existing = db.query(Chat).filter(Chat.user_product_id == user_product_id).first()
+    # 이미 메시지가 있으면 첫 번째 assistant 메시지를 그대로 반환
+    existing = (
+        db.query(Chat)
+        .filter(Chat.user_product_id == user_product_id, Chat.role == "assistant")
+        .order_by(Chat.chat_id.asc())
+        .first()
+    )
     if existing:
-        return {"reply": None, "is_exit": False, "final_code": None}
+        return {"reply": existing.content, "is_exit": False, "final_code": None}
 
     system_prompt = build_system_prompt(up.prompt_data)
     messages = [

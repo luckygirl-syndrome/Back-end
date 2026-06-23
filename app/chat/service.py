@@ -409,8 +409,15 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
     lock_key = f"greet_lock:{user_product_id}"
     acquired = redis_client.set(lock_key, 1, nx=True, ex=30)
     if not acquired:
-        # 락 획득 실패 → 다른 요청이 생성 중, 프론트가 polling으로 처리
-        return {"reply": None, "is_exit": False, "final_code": None}
+        # 락 획득 실패 → 다른 요청이 생성 중이므로 잠시 후 DB에서 읽어 반환
+        await asyncio.sleep(2)
+        existing = (
+            db.query(Chat)
+            .filter(Chat.user_product_id == user_product_id, Chat.role == "assistant")
+            .order_by(Chat.chat_id.asc())
+            .first()
+        )
+        return {"reply": existing.content if existing else None, "is_exit": False, "final_code": None}
 
     system_prompt = build_system_prompt(up.prompt_data)
     messages = [

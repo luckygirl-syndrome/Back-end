@@ -1,4 +1,4 @@
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from sqlalchemy.orm import Session
@@ -57,27 +57,35 @@ async def start_chat(
 @router.get(
     "/list",
     summary="채팅 목록 조회",
-    description="현재 유저의 모든 채팅 세션을 최신순으로 반환합니다.",
-    responses=_200([
-        {
-            "user_product_id": 1,
-            "product_name": "Healing Off-Shoulder Tee",
-            "product_img": "data:image/jpeg;base64,...",
-            "price": 45500,
-            "status": "PENDING",
-            "statusLabel": "고민 중",
-            "impulse_score": 54,
-            "match_score": 74,
-            "requested_at": "2026-06-06T12:00:00",
-        }
-    ]),
+    description="cursor 기반 무한스크롤. cursor 없으면 첫 페이지, cursor에 이전 응답의 nextCursor 값을 넘기면 다음 페이지.",
+    responses=_200({
+        "items": [
+            {
+                "user_product_id": 1,
+                "product_name": "Healing Off-Shoulder Tee",
+                "product_img": "data:image/jpeg;base64,...",
+                "price": 45500,
+                "status": "PENDING",
+                "statusLabel": "고민 중",
+                "impulse_score": 54,
+                "match_score": 74,
+                "requested_at": "2026-06-06T12:00:00",
+                "has_unread": False,
+            }
+        ],
+        "nextCursor": 5,
+        "hasNext": True,
+    }),
 )
 def get_chat_list(
+    cursor: Optional[int] = None,
+    size: int = 20,
+    sort: str = "newest",
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    items = service.get_chat_list(db, current_user.user_id)
-    return success(items)
+    result = service.get_chat_list(db, current_user.user_id, cursor=cursor, size=size, sort=sort)
+    return success(result)
 
 
 @router.get(
@@ -95,6 +103,7 @@ def get_chat_list(
         "finalScore": None,
         "impulse_score": 54,
         "match_score": 74,
+        "hasReview": False,
         "messages": [
             {"role": "assistant", "content": "일주일째 눈에 밟히고...", "created_at": "2026-06-06T12:00:00"},
             {"role": "user", "content": "이거 살까?", "created_at": "2026-06-06T12:01:00"},
@@ -178,6 +187,28 @@ async def exit_chat(
     if not result:
         raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다.")
     return success(result)
+
+
+@router.delete(
+    "/{user_product_id}",
+    summary="채팅 삭제 (소프트 딜리트)",
+    description="채팅방을 숨김 처리합니다. 실제 데이터는 삭제되지 않습니다.",
+)
+def delete_chat(
+    user_product_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    from app.products.models import UserProduct
+    up = db.query(UserProduct).filter(
+        UserProduct.user_product_id == user_product_id,
+        UserProduct.user_id == current_user.user_id,
+    ).first()
+    if not up:
+        raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다.")
+    up.is_hidden = True
+    db.commit()
+    return success(None)
 
 
 @router.post("/{user_product_id}/active", summary="채팅방 입장 알림 (알림 억제)")

@@ -166,6 +166,12 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
 # ── 인증 엔드포인트 ───────────────────────────────────────────────
 
 # 1. 회원가입
+@router.get("/auth/check-email", summary="이메일 중복 확인", responses=_200({"available": True}))
+def check_email(email: str, db: Session = Depends(get_db)):
+    exists = db.query(models.User).filter(models.User.email == email).first()
+    return success({"available": not bool(exists)})
+
+
 @router.post("/auth/signup", summary="이메일 회원가입", responses=_200({"userId": 1, "email": "user@example.com", "nickname": "또바바"}))
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
@@ -259,7 +265,7 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
 # ── 프로필 ────────────────────────────────────────────────────────
 
 # 내 프로필 조회
-@router.get("/profile", summary="내 프로필 조회", responses=_200({"nickname": "또바바", "profileImg": "3", "fbtiName": "도파민 쇼퍼"}))
+@router.get("/profile", summary="내 프로필 조회", responses=_200({"nickname": "또바바", "profileImg": "3", "fbtiName": "도파민 쇼퍼", "initialQDone": True}))
 def get_my_profile(current_user: models.User = Depends(get_current_user)):
     fbti_name = ""
     profile_img = str(current_user.profile_img) if current_user.profile_img else "1"
@@ -278,6 +284,7 @@ def get_my_profile(current_user: models.User = Depends(get_current_user)):
     return success({
         "nickname": current_user.nickname,
         "profileImg": profile_img,
+        "initialQDone": current_user.age_group is not None,
         "fbtiName": fbti_name,
     })
 
@@ -362,4 +369,33 @@ def get_closet_stats(db: Session = Depends(get_db), current_user: models.User = 
         "droppedCount": len(dropped),
         "droppedPrice": dropped_price,
     })
+
+
+# 회원 탈퇴
+@router.delete("/users/me", summary="회원 탈퇴", responses=_200(None))
+def delete_my_account(
+    db: Session = Depends(get_db),
+    current_user: models.User = Depends(get_current_user),
+):
+    from app.chat.models import Chat
+    from app.notifications.models import Notification, FcmToken
+
+    user_id = current_user.user_id
+
+    if posthog_client:
+        posthog_client.capture(distinct_id=str(user_id), event="user_deleted")
+
+    # 관련 데이터 순서대로 삭제 (FK 의존성 고려)
+    up_ids = [row[0] for row in db.query(UserProduct.user_product_id).filter(UserProduct.user_id == user_id).all()]
+    if up_ids:
+        db.query(Chat).filter(Chat.user_product_id.in_(up_ids)).delete(synchronize_session=False)
+        db.query(Notification).filter(Notification.user_product_id.in_(up_ids)).delete(synchronize_session=False)
+    db.query(Notification).filter(Notification.user_id == user_id).delete(synchronize_session=False)
+    db.query(FcmToken).filter(FcmToken.user_id == user_id).delete(synchronize_session=False)
+    db.query(UserProduct).filter(UserProduct.user_id == user_id).delete(synchronize_session=False)
+    db.query(models.UserSocialProvider).filter(models.UserSocialProvider.user_id == user_id).delete(synchronize_session=False)
+    db.delete(current_user)
+    db.commit()
+
+    return success(None)
 

@@ -44,3 +44,4 @@ protobuf==5.29.6
 certifi==2026.1.4
 openai
 coolsms-python-sdk
+boto3==1.38.27

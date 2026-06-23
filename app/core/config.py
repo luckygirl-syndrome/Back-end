@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     COOLSMS_API_KEY: str = ""
     COOLSMS_API_SECRET: str = ""
     COOLSMS_FROM: str = ""
+    AWS_ACCESS_KEY_ID: str = ""
+    AWS_SECRET_ACCESS_KEY: str = ""
+    AWS_S3_BUCKET: str = ""
+    AWS_S3_REGION: str = "us-east-1"
 
     @property
     def db_engine_kwargs(self):

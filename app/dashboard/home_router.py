@@ -1,3 +1,4 @@
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
@@ -95,12 +96,13 @@ def get_receipt_detail(
     }),
 )
 def get_stats(
+    period: str = "3m",
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     try:
         user_id = current_user.user_id
-        return service.get_stats(db, user_id)
+        return service.get_stats(db, user_id, period=period)
     except Exception as e:
         print("stats error:", e)
         raise HTTPException(status_code=500, detail="통계 데이터를 불러오지 못했어.")
@@ -114,12 +116,39 @@ def get_stats(
     responses=_200({"status": "success", "data": [{"user_product_id": 2, "product_id": 2, "product_name": "Wide Denim Pants", "product_img": "data:image/jpeg;base64,...", "price": 89000, "duration_days": 3}]}),
 )
 def get_considering_list(
+    cursor: Optional[int] = None,
+    size: int = 20,
+    sort: str = "newest",
     current_user: models.User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     try:
         user_id = current_user.user_id
-        return service.get_considering_items(db, user_id)
+        return service.get_considering_items(db, user_id, cursor=cursor, size=size, sort=sort)
     except Exception as e:
         print("considering list error:", e)
         raise HTTPException(status_code=500, detail="고민 중인 목록 데이터를 불러오지 못했어.")
+
+
+@router.post(
+    "/overdue-item/{user_product_id}/dismiss",
+    summary="평가 알림 숨기기",
+    description="X 버튼 누르면 해당 상품의 평가 유도 알림을 영구적으로 숨깁니다.",
+    responses=_200(None),
+)
+def dismiss_overdue_item(
+    user_product_id: int,
+    current_user: models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from app.products.models import UserProduct
+    up = db.query(UserProduct).filter(
+        UserProduct.user_product_id == user_product_id,
+        UserProduct.user_id == current_user.user_id,
+    ).first()
+    if not up:
+        raise HTTPException(status_code=404, detail="상품을 찾을 수 없습니다.")
+    up.review_nudge_dismissed = True
+    db.commit()
+    from app.core.response import success
+    return success(None)

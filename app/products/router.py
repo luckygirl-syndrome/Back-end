@@ -11,6 +11,45 @@ router = APIRouter(prefix="/api/products", tags=["상품 분석"])
 _200 = lambda result: {"200": {"content": {"application/json": {"example": {"isSuccess": True, "code": "200", "message": "OK", "result": result}}}}}
 
 
+# 구매 여부 업데이트
+@router.post(
+    "/user-product/{user_product_id}/purchase",
+    summary="구매 여부 업데이트",
+    description="채팅 종료 후 실제 구매 또는 포기 여부를 업데이트합니다.",
+    responses=_200({"message": "성공적으로 구매 확정되었습니다."}),
+)
+def update_purchase(
+    user_product_id: int,
+    body: schemas.PurchaseStatusUpdate,
+    current_user: user_models.User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    from datetime import datetime
+    up = db.query(models.UserProduct).filter(
+        models.UserProduct.user_product_id == user_product_id,
+        models.UserProduct.user_id == current_user.user_id,
+    ).first()
+
+    if not up:
+        raise HTTPException(status_code=404, detail="해당 채팅방(상품)을 찾을 수 없습니다.")
+
+    if body.is_purchased:
+        up.is_purchased = True
+        up.status = "PURCHASED"
+        up.completed_at = datetime.now()
+        msg = "성공적으로 구매 확정되었습니다."
+    elif body.is_abandoned:
+        up.is_purchased = False
+        up.status = "ABANDONED"
+        up.completed_at = datetime.now()
+        msg = "구매 포기 처리가 완료되었습니다."
+    else:
+        return success({"message": "변경된 결정 사항이 없습니다."})
+
+    db.commit()
+    return success({"message": msg})
+
+
 # 구매 후 평가 조회
 @router.get(
     "/user-product/{user_product_id}/review",

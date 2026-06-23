@@ -477,8 +477,9 @@ async def send_message(
     final_code = _parse_code(reply)
     clean_reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
 
-    _save_message(db, user_id, user_product_id, "assistant", clean_reply)
-    _notify_chat(db, user_id, user_product_id, clean_reply)
+    if clean_reply:
+        _save_message(db, user_id, user_product_id, "assistant", clean_reply)
+        _notify_chat(db, user_id, user_product_id, clean_reply)
 
     if final_code:
         up.final_code = final_code
@@ -512,11 +513,13 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
             .order_by(Chat.chat_id.desc())
             .first()
         )
-        return {
-            "reply": last_msg.content if last_msg else None,
-            "finalCode": up.final_code,
-            "finalScore": up.final_score,
-        }
+        if last_msg and last_msg.content:
+            return {
+                "reply": last_msg.content,
+                "finalCode": up.final_code,
+                "finalScore": up.final_score,
+            }
+        # 마지막 메시지가 없거나 비어있으면 아래에서 LLM 재호출
 
     system_prompt = build_system_prompt(up.prompt_data)
     history = _build_history(db, user_product_id)

@@ -279,10 +279,17 @@ def get_considering_items(db: Session, user_id: int, cursor: int = None, size: i
         if not up.requested_at:
             continue
         duration_days = (now - up.requested_at).days
+        raw_img = prod.product_img
+        try:
+            import json
+            img_list = json.loads(raw_img) if raw_img else []
+            thumbnail = img_list[0] if img_list else None
+        except Exception:
+            thumbnail = raw_img
         items.append(schemas.ConsideringListItem(
             user_product_id=up.user_product_id,
             product_id=prod.product_id,
-            product_img=prod.product_img,
+            product_img=thumbnail,
             product_name=prod.product_name,
             price=prod.price,
             duration_days=duration_days

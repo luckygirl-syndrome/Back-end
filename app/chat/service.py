@@ -385,6 +385,7 @@ def _save_message(db: Session, user_id: int, user_product_id: int, role: str, co
 
 async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> Optional[dict]:
     from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
+    from app.core.redis_client import redis_client
 
     up = (
         db.query(UserProduct)
@@ -404,6 +405,20 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
     if existing and existing.content:
         return {"reply": existing.content, "is_exit": False, "final_code": None}
 
+    # 동시 중복 호출 방지: Redis 락 (30초 TTL)
+    lock_key = f"greet_lock:{user_product_id}"
+    acquired = redis_client.set(lock_key, 1, nx=True, ex=30)
+    if not acquired:
+        # 락 획득 실패 → 다른 요청이 생성 중이므로 잠시 후 DB에서 읽어 반환
+        await asyncio.sleep(2)
+        existing = (
+            db.query(Chat)
+            .filter(Chat.user_product_id == user_product_id, Chat.role == "assistant")
+            .order_by(Chat.chat_id.asc())
+            .first()
+        )
+        return {"reply": existing.content if existing else None, "is_exit": False, "final_code": None}
+
     system_prompt = build_system_prompt(up.prompt_data)
     messages = [
         {"role": "system", "content": system_prompt},
@@ -414,9 +429,11 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
         reply = await asyncio.to_thread(call_deepseek, messages)
     except Exception as e:
         _logger.error(f"[GREET] DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
+        redis_client.delete(lock_key)
         return None
     _save_message(db, user_id, user_product_id, "assistant", reply)
     _notify_chat(db, user_id, user_product_id, reply)
+    redis_client.delete(lock_key)
     return {"reply": reply, "is_exit": False, "final_code": None}
 
 

@@ -59,8 +59,8 @@ def _calc_final_score(impulse_score: int, match_score: int, final_code: str) -> 
 FIRST_TURN_TRIGGER = "대화를 시작해줘. 첫 답변 규칙에 따라 2문장으로 시작해."
 EXIT_TRIGGER = (
     "대화가 [EXIT] 신호로 종료됩니다. "
-    "전체 대화에서 드러난 유저의 구매 판단 태도를 분석하고, "
-    "반드시 'CODE: 코드명' 형식으로만 출력해."
+    "지금까지 나눈 대화를 바탕으로, 또바로서 유저에게 따뜻하고 진심 어린 마지막 한마디를 2~3문장으로 건네줘. "
+    "그리고 반드시 마지막 줄에 'CODE: 코드명' 형식으로 구매 판단 코드를 출력해."
 )
 
 
@@ -487,9 +487,16 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
     if not up or not up.prompt_data:
         return None
 
-    # 이미 종료된 경우 기존 값 그대로 반환 (중복 호출 방지)
+    # 이미 종료된 경우 마지막 assistant 메시지와 함께 반환 (중복 호출 방지)
     if up.final_code is not None:
+        last_msg = (
+            db.query(Chat)
+            .filter(Chat.user_product_id == user_product_id, Chat.role == "assistant")
+            .order_by(Chat.chat_id.desc())
+            .first()
+        )
         return {
+            "reply": last_msg.content if last_msg else None,
             "finalCode": up.final_code,
             "finalScore": up.final_score,
         }

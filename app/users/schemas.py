@@ -7,7 +7,6 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     nickname: str
-    phone: str
 
     @field_validator("password")
     @classmethod
@@ -146,12 +145,12 @@ class PasswordChange(BaseModel):
             raise ValueError("비밀번호는 최소 8자 이상이어야 합니다.")
         return v
 
-# 10. 전화번호 인증 (회원가입용 / 아이디 찾기 공용)
-class PhoneRequest(BaseModel):
-    phone: str
+# 10. 이메일 인증 (회원가입용)
+class EmailVerifyRequest(BaseModel):
+    email: EmailStr
 
-class PhoneVerify(BaseModel):
-    phone: str
+class EmailVerifyConfirm(BaseModel):
+    email: EmailStr
     code: str
 
 # 11. 비밀번호 재설정 (이메일 코드 방식)

@@ -10,8 +10,7 @@ from app.core.response import success
 from app.core.observability import posthog_client
 from app.core.security import create_access_token, hash_password, verify_password
 from app.core.redis_client import redis_client
-from app.core.email import send_password_reset_code
-from app.core.sms import send_verification_code
+from app.core.email import send_password_reset_code, send_signup_verification_code
 from app.users import models, schemas
 from app.users.router import (
     _verify_google_token, _verify_kakao_token, _verify_apple_token,
@@ -22,58 +21,55 @@ logger = logging.getLogger(__name__)
 
 _RESET_CODE_TTL = 600    # 10분
 _RESET_TOKEN_TTL = 600   # 10분
-_PHONE_CODE_TTL = 180    # 3분
-_PHONE_VERIFIED_TTL = 600  # 10분 (회원가입 완료 전까지 유지)
+_EMAIL_CODE_TTL = 600    # 10분
+_EMAIL_VERIFIED_TTL = 600  # 10분 (회원가입 완료 전까지 유지)
 
 router = APIRouter(prefix="/api", tags=["인증"])
 
 _200 = lambda result: {"200": {"content": {"application/json": {"example": {"isSuccess": True, "code": "200", "message": "OK", "result": result}}}}}
 
 
-@router.post("/auth/phone/request", summary="전화번호 인증 코드 발송 (회원가입용)", responses=_200(None))
-def phone_request(body: schemas.PhoneRequest, db: Session = Depends(get_db)):
-    existing = db.query(models.User).filter(models.User.phone == body.phone).first()
+@router.post("/auth/email/request", summary="이메일 인증 코드 발송 (회원가입용)", responses=_200(None))
+def email_verify_request(body: schemas.EmailVerifyRequest, db: Session = Depends(get_db)):
+    existing = db.query(models.User).filter(models.User.email == body.email).first()
     if existing:
-        raise HTTPException(status_code=400, detail="이미 가입된 전화번호입니다.")
+        raise HTTPException(status_code=400, detail="이미 가입된 이메일입니다.")
     code = f"{random.randint(0, 999999):06d}"
-    redis_client.setex(f"phone_verify:code:{body.phone}", _PHONE_CODE_TTL, code)
+    redis_client.setex(f"email_verify:code:{body.email}", _EMAIL_CODE_TTL, code)
     try:
-        send_verification_code(body.phone, code)
+        send_signup_verification_code(body.email, code)
     except Exception as e:
-        logger.error(f"SMS 발송 실패 [{body.phone}]: {e}")
-        raise HTTPException(status_code=500, detail="SMS 발송에 실패했습니다. 잠시 후 다시 시도해주세요.")
+        logger.error(f"이메일 인증 코드 발송 실패 [{body.email}]: {e}")
+        raise HTTPException(status_code=500, detail="이메일 발송에 실패했습니다. 잠시 후 다시 시도해주세요.")
     return success(None)
 
 
-@router.post("/auth/phone/verify", summary="전화번호 인증 코드 확인 (회원가입용)", responses=_200(None))
-def phone_verify(body: schemas.PhoneVerify):
-    stored = redis_client.get(f"phone_verify:code:{body.phone}")
+@router.post("/auth/email/verify", summary="이메일 인증 코드 확인 (회원가입용)", responses=_200(None))
+def email_verify_confirm(body: schemas.EmailVerifyConfirm):
+    stored = redis_client.get(f"email_verify:code:{body.email}")
     if not stored or stored != body.code:
         raise HTTPException(status_code=400, detail="인증 코드가 올바르지 않거나 만료되었습니다.")
-    redis_client.delete(f"phone_verify:code:{body.phone}")
-    redis_client.setex(f"phone_verify:verified:{body.phone}", _PHONE_VERIFIED_TTL, "1")
+    redis_client.delete(f"email_verify:code:{body.email}")
+    redis_client.setex(f"email_verify:verified:{body.email}", _EMAIL_VERIFIED_TTL, "1")
     return success(None)
 
 
 @router.post("/auth/signup", summary="이메일 회원가입", responses=_200({"userId": 1, "email": "user@example.com", "nickname": "또바바"}))
 def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    if not redis_client.get(f"phone_verify:verified:{user.phone}"):
-        raise HTTPException(status_code=400, detail="전화번호 인증이 완료되지 않았습니다.")
+    if not redis_client.get(f"email_verify:verified:{user.email}"):
+        raise HTTPException(status_code=400, detail="이메일 인증이 완료되지 않았습니다.")
     db_user = db.query(models.User).filter(models.User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="이미 존재하는 이메일입니다.")
-    if db.query(models.User).filter(models.User.phone == user.phone).first():
-        raise HTTPException(status_code=400, detail="이미 가입된 전화번호입니다.")
     new_user = models.User(
         email=user.email,
         password=hash_password(user.password),
         nickname=user.nickname,
-        phone=user.phone,
     )
     db.add(new_user)
     db.commit()
     db.refresh(new_user)
-    redis_client.delete(f"phone_verify:verified:{user.phone}")
+    redis_client.delete(f"email_verify:verified:{user.email}")
     if posthog_client:
         posthog_client.capture(distinct_id=str(new_user.user_id), event="user_signed_up",
                                properties={"has_nickname": bool(new_user.nickname)})
@@ -139,38 +135,6 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "apple"})
     return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
 
-
-@router.post("/auth/find-email/request", summary="아이디 찾기 - 인증 코드 발송", responses=_200(None))
-def find_email_request(body: schemas.PhoneRequest, db: Session = Depends(get_db)):
-    user = db.query(models.User).filter(models.User.phone == body.phone).first()
-    if user:
-        code = f"{random.randint(0, 999999):06d}"
-        redis_client.setex(f"find_email:code:{body.phone}", _PHONE_CODE_TTL, code)
-        try:
-            send_verification_code(body.phone, code)
-        except Exception as e:
-            logger.error(f"아이디 찾기 SMS 발송 실패 [{body.phone}]: {e}")
-    # 미가입 번호도 200 반환 (보안)
-    return success(None)
-
-
-@router.post("/auth/find-email/verify", summary="아이디 찾기 - 코드 검증 후 마스킹 이메일 반환", responses=_200({"maskedEmail": "tt****@gmail.com"}))
-def find_email_verify(body: schemas.PhoneVerify, db: Session = Depends(get_db)):
-    stored = redis_client.get(f"find_email:code:{body.phone}")
-    if not stored or stored != body.code:
-        raise HTTPException(status_code=400, detail="인증 코드가 올바르지 않거나 만료되었습니다.")
-    redis_client.delete(f"find_email:code:{body.phone}")
-    user = db.query(models.User).filter(models.User.phone == body.phone).first()
-    if not user or not user.email:
-        raise HTTPException(status_code=404, detail="해당 전화번호로 가입된 계정을 찾을 수 없습니다.")
-    masked = _mask_email(user.email)
-    return success({"maskedEmail": masked})
-
-
-def _mask_email(email: str) -> str:
-    local, domain = email.split("@", 1)
-    visible = local[:2] if len(local) >= 2 else local[:1]
-    return f"{visible}{'*' * (len(local) - len(visible))}@{domain}"
 
 
 @router.post("/auth/password-reset/request", summary="비밀번호 재설정 코드 발송", responses=_200(None))

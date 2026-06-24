@@ -157,7 +157,7 @@ async def greet(
 async def send_message(
     user_product_id: int,
     message: str = Form(...),
-    images: Optional[List[UploadFile]] = File(None),
+    images: List[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):

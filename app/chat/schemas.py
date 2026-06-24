@@ -58,7 +58,8 @@ class ChatListItem(BaseModel):
     user_product_id: int
     product_name: str
     product_img: Optional[str]
-    price: int
+    discount_price: int
+    discount_rate: Optional[float] = None
     last_chat_time: str  # "오늘", "어제" 등으로 변환해서 줄 거야
     status_label: str    # "구매 완료", "구매 포기", "고민 중"
     is_purchased: Optional[int]
@@ -73,7 +74,9 @@ class ChatRoomDetailResponse(BaseModel):
     user_product_id: int
     product_name: str
     product_img: Optional[str]
-    price: int
+    discount_price: int
+    original_price: Optional[int] = None
+    discount_rate: Optional[float] = None
     platform: Optional[str] = None  # 무신사, 지그재그, 에이블리 등
     product_url: Optional[str] = None  # 쇼핑몰 상품 링크 (상단 shop 아이콘 하이퍼링크용)
     status_label: str

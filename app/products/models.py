@@ -11,6 +11,7 @@ class Product(Base):
     product_name = Column(String(255))
     category = Column(String(50))
     price = Column(Integer)
+    discounted_price = Column(Integer, nullable=True)
     discount_rate = Column(Float)
     is_direct_shipping = Column(Boolean)
     free_shipping = Column(Boolean)

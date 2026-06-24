@@ -211,7 +211,8 @@ def get_stats(db: Session, user_id: int, period: str = "3m") -> schemas.StatsRes
             user_product_id=up.user_product_id,
             product_name=prod.product_name,
             product_img=thumbnail,
-            price=prod.price,
+            discount_price=prod.discounted_price if prod.discounted_price else prod.price,
+            discount_rate=prod.discount_rate,
             days_since_purchase=days,
         )
 
@@ -305,7 +306,8 @@ def get_considering_items(db: Session, user_id: int, cursor: int = None, size: i
             product_id=prod.product_id,
             product_img=thumbnail,
             product_name=prod.product_name,
-            price=prod.price,
+            discount_price=prod.discounted_price if prod.discounted_price else prod.price,
+            discount_rate=prod.discount_rate,
             duration_days=duration_days
         ))
 

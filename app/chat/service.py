@@ -78,10 +78,11 @@ def get_processor() -> AllInputVisionProcessor:
     return _processor
 
 
-def _parse_product_info(product_info: List[str]) -> Tuple[str, int, Optional[float]]:
-    """product_info 리스트에서 product_name, price, discount_rate 파싱."""
+def _parse_product_info(product_info: List[str]) -> Tuple[str, int, Optional[int], Optional[float]]:
+    """product_info 리스트에서 product_name, price, discounted_price, discount_rate 파싱."""
     product_name = "알 수 없음"
     price = 0
+    discounted_price = None
     discount_rate = None
 
     if len(product_info) > 0:
@@ -92,11 +93,14 @@ def _parse_product_info(product_info: List[str]) -> Tuple[str, int, Optional[flo
         m = re.search(r"([\d,]+)원", price_str)
         if m:
             price = int(m.group(1).replace(",", ""))
-        m2 = re.search(r"(\d+)% 할인", price_str)
+        m2 = re.search(r"→\s*([\d,]+)원", price_str)
         if m2:
-            discount_rate = float(m2.group(1))
+            discounted_price = int(m2.group(1).replace(",", ""))
+        m3 = re.search(r"(\d+)% 할인", price_str)
+        if m3:
+            discount_rate = float(m3.group(1))
 
-    return product_name, price, discount_rate
+    return product_name, price, discounted_price, discount_rate
 
 
 def _extract_scores(confirmed_sentences: List[str]) -> Tuple[int, int]:
@@ -165,13 +169,14 @@ async def analyze_and_create_session(
     if not result:
         return None
 
-    product_name, price, discount_rate = _parse_product_info(result.get("product_info", []))
+    product_name, price, discounted_price, discount_rate = _parse_product_info(result.get("product_info", []))
     impulse_score, match_score = _extract_scores(result.get("confirmed_sentences", []))
 
     # Product 레코드 생성
     product = Product(
         product_name=product_name,
         price=price,
+        discounted_price=discounted_price,
         discount_rate=discount_rate,
         product_img=json.dumps(image_url_list, ensure_ascii=False),
     )
@@ -247,7 +252,7 @@ def get_chat_list(db: Session, user_id: int, cursor: Optional[int] = None, size:
         products = (
             db.query(Product)
             .filter(Product.product_id.in_(product_ids))
-            .options(load_only(Product.product_id, Product.product_name, Product.price, Product.product_img))
+            .options(load_only(Product.product_id, Product.product_name, Product.price, Product.discounted_price, Product.discount_rate, Product.product_img))
             .all()
         )
         product_map = {p.product_id: p for p in products}
@@ -289,7 +294,8 @@ def get_chat_list(db: Session, user_id: int, cursor: Optional[int] = None, size:
             "user_product_id": up.user_product_id,
             "product_name": product.product_name if product else "알 수 없음",
             "product_img": thumbnail,
-            "price": product.price if product else 0,
+            "discount_price": product.discounted_price if product and product.discounted_price else (product.price if product else 0),
+            "discount_rate": product.discount_rate if product else None,
             "status": up.status,
             "statusLabel": _STATUS_LABEL.get(up.status or "", "고민 중"),
             "impulse_score": up.impulse_score,
@@ -318,7 +324,7 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
     product = (
         db.query(Product)
         .filter(Product.product_id == up.product_id)
-        .options(load_only(Product.product_name, Product.price, Product.product_img))
+        .options(load_only(Product.product_name, Product.price, Product.discounted_price, Product.discount_rate, Product.product_img))
         .first()
     )
 
@@ -338,7 +344,9 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
     return {
         "user_product_id": up.user_product_id,
         "product_name": product.product_name if product else "알 수 없음",
-        "price": product.price if product else 0,
+        "original_price": product.price if product else None,
+        "discount_price": product.discounted_price if product and product.discounted_price else (product.price if product else 0),
+        "discount_rate": product.discount_rate if product else None,
         "product_img": img_list[0] if img_list else None,
         "product_imgs": img_list,
         "status": up.status,

@@ -65,7 +65,8 @@ class OverdueReviewItem(BaseModel):
     user_product_id: int
     product_name: str
     product_img: Optional[str] = None
-    price: int
+    discount_price: int
+    discount_rate: Optional[float] = None
     days_since_purchase: int
 
 class StatsData(BaseModel):
@@ -86,7 +87,8 @@ class ConsideringListItem(BaseModel):
     product_id: int
     product_img: Optional[str] = None
     product_name: str
-    price: int
+    discount_price: int
+    discount_rate: Optional[float] = None
     duration_days: Optional[int] = None # 고민 중인 기간
 
 class ConsideringListResponse(BaseModel):

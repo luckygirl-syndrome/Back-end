@@ -29,7 +29,7 @@ def _notify_chat(db: Session, user_id: int, user_product_id: int, reply: str):
         product = db.query(Product).filter(Product.product_id == up.product_id).first() if up else None
         product_name = product.product_name if product else ""
         preview = reply[:50] + "..." if len(reply) > 50 else reply
-        body = f"[{product_name}] {preview}" if product_name else preview
+        body = preview
         send_push_to_user(db, user_id, title="또바", body=body, save_to_inbox=True, notification_type="chat", user_product_id=user_product_id)
     except Exception as e:
         _logger.warning(f"채팅 FCM 알림 실패 (user={user_id}): {e}")

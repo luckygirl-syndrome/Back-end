@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, DateTime, Text, ForeignKey, BigInteger, Index
+from sqlalchemy import Column, String, DateTime, Text, ForeignKey, BigInteger, Index, JSON
 from app.core.database import Base
 from datetime import datetime
 
@@ -10,6 +10,7 @@ class Chat(Base):
     user_product_id = Column(BigInteger, ForeignKey("user_product.user_product_id"), nullable=False)
     role = Column(String(20), nullable=False) # "user" / "assistant"
     content = Column(Text, nullable=False)
+    images = Column(JSON, nullable=True)  # S3 URL 목록
     created_at = Column(DateTime, default=datetime.now)
 
     __table_args__ = (

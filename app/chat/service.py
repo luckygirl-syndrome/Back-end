@@ -353,6 +353,7 @@ def get_chat_room(db: Session, user_product_id: int, user_id: int) -> Optional[d
             {
                 "role": m.role,
                 "content": m.content,
+                "images": m.images or [],
                 "created_at": m.created_at.isoformat() if m.created_at else None,
             }
             for m in messages
@@ -378,8 +379,8 @@ def _build_history(db: Session, user_product_id: int) -> list:
     return [{"role": r.role, "content": r.content} for r in rows]
 
 
-def _save_message(db: Session, user_id: int, user_product_id: int, role: str, content: str) -> None:
-    db.add(Chat(user_id=user_id, user_product_id=user_product_id, role=role, content=content))
+def _save_message(db: Session, user_id: int, user_product_id: int, role: str, content: str, images: list = None) -> None:
+    db.add(Chat(user_id=user_id, user_product_id=user_product_id, role=role, content=content, images=images or []))
     db.commit()
 
 
@@ -438,10 +439,11 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
 
 
 async def send_message(
-    db: Session, user_product_id: int, user_id: int, message: str
+    db: Session, user_product_id: int, user_id: int, message: str, images: list = None
 ) -> Optional[dict]:
     from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
-    from fastapi import HTTPException
+    from fastapi import HTTPException, UploadFile
+    from app.core.s3 import upload_image
 
     up = (
         db.query(UserProduct)
@@ -455,10 +457,21 @@ async def send_message(
     if up.final_code is not None:
         raise HTTPException(status_code=400, detail="이미 종료된 채팅입니다.")
 
+    # 이미지 S3 업로드
+    image_urls = []
+    for img in (images or []):
+        try:
+            file_bytes = await img.read()
+            mime = img.content_type or "image/jpeg"
+            url = await asyncio.to_thread(upload_image, file_bytes, mime, "chat")
+            image_urls.append(url)
+        except Exception as e:
+            _logger.warning(f"채팅 이미지 업로드 실패: {e}")
+
     system_prompt = build_system_prompt(up.prompt_data)
     history = _build_history(db, user_product_id)
 
-    _save_message(db, user_id, user_product_id, "user", message)
+    _save_message(db, user_id, user_product_id, "user", message, images=image_urls)
     messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": message}]
 
     try:

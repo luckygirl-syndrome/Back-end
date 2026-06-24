@@ -146,7 +146,7 @@ async def greet(
 @router.post(
     "/{user_product_id}/message",
     summary="채팅 메시지 전송",
-    description="유저 메시지를 보내고 봇 답변을 받습니다.",
+    description="유저 메시지를 보내고 봇 답변을 받습니다. multipart/form-data로 message 텍스트와 images 파일을 함께 전송할 수 있습니다.",
     responses=_200({
         "reply": "지금은 옷 자체가 별로라서 망설이는 게 아니라, 네 평소 분위기랑 이 무드가 얼마나 자연스럽게 이어질지가 더 큰 고민 같아.",
         "is_exit": False,
@@ -156,12 +156,13 @@ async def greet(
 )
 async def send_message(
     user_product_id: int,
-    body: ChatMessageRequest,
+    message: str = Form(...),
+    images: Optional[List[UploadFile]] = File(None),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     result = await service.send_message(
-        db, user_product_id, current_user.user_id, body.message
+        db, user_product_id, current_user.user_id, message, images=images or []
     )
     if not result:
         raise HTTPException(status_code=404, detail="채팅방을 찾을 수 없습니다.")

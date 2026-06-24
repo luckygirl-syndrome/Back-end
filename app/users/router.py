@@ -43,8 +43,11 @@ def get_current_user(token: str = Depends(api_key_header), db: Session = Depends
 
 def _verify_google_token(id_token: str) -> dict:
     try:
+        audiences = [settings.GOOGLE_CLIENT_ID]
+        if settings.GOOGLE_IOS_CLIENT_ID:
+            audiences.append(settings.GOOGLE_IOS_CLIENT_ID)
         return google_id_token.verify_oauth2_token(
-            id_token, google_requests.Request(), settings.GOOGLE_CLIENT_ID
+            id_token, google_requests.Request(), audiences
         )
     except ValueError as e:
         logger.error(f"[구글 로그인 실패] {e}")

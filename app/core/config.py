@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     ALGORITHM: str
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     GOOGLE_CLIENT_ID: str = ""
+    GOOGLE_IOS_CLIENT_ID: str = ""
     KAKAO_REST_API_KEY: str = ""
     KAKAO_NATIVE_APP_KEY: str = ""
     APPLE_CLIENT_ID: str = ""

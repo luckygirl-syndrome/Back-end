@@ -144,7 +144,7 @@ def get_stats(db: Session, user_id: int, period: str = "3m") -> schemas.StatsRes
             UserProduct.product_id != 0,
             UserProduct.final_score.isnot(None),
         )
-        .order_by(UserProduct.updated_at.desc())
+        .order_by(UserProduct.completed_at.desc())
         .limit(4)
         .all()
     )

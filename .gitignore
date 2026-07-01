@@ -1,5 +1,7 @@
 # 환경 변수
 .env
+.env.dev
+.env.prod
 
 # Python
 __pycache__/

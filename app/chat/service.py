@@ -56,12 +56,7 @@ def _calc_final_score(impulse_score: int, match_score: int, final_code: str) -> 
     raw = (match_score - impulse_score) / 2 + adjustment
     return max(0, min(100, round((raw + 60) / 120 * 100)))
 
-FIRST_TURN_TRIGGER = "대화를 시작해줘. 첫 답변 규칙에 따라 2문장으로 시작해."
-EXIT_TRIGGER = (
-    "대화가 [EXIT] 신호로 종료됩니다. "
-    "지금까지 나눈 대화를 바탕으로, 또바로서 유저에게 따뜻하고 진심 어린 마지막 한마디를 1~2문장으로 건네줘. "
-    "그리고 반드시 마지막 줄에 'CODE: 코드명' 형식으로 구매 판단 코드를 출력해."
-)
+FIRST_TURN_TRIGGER = "[TURN_MODE:first]"
 
 
 def _parse_code(text: str) -> Optional[str]:
@@ -435,7 +430,7 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
     ]
 
     try:
-        reply = await asyncio.to_thread(call_deepseek, messages)
+        reply = await asyncio.to_thread(call_deepseek, messages, up.prompt_data)
     except Exception as e:
         _logger.error(f"[GREET] DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
         redis_client.delete(lock_key)
@@ -480,10 +475,10 @@ async def send_message(
     history = _build_history(db, user_product_id)
 
     _save_message(db, user_id, user_product_id, "user", message, images=image_urls)
-    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": message}]
+    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": f"[TURN_MODE:free]\n{message}"}]
 
     try:
-        reply = await asyncio.to_thread(call_deepseek, messages)
+        reply = await asyncio.to_thread(call_deepseek, messages, up.prompt_data)
     except Exception as e:
         _logger.error(f"DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
         # 저장한 유저 메시지 rollback
@@ -516,7 +511,7 @@ async def send_message(
 
 
 async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional[dict]:
-    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
+    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek_exit, call_deepseek_farewell
 
     up = (
         db.query(UserProduct)
@@ -540,18 +535,20 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
                 "finalCode": up.final_code,
                 "finalScore": up.final_score,
             }
-        # 마지막 메시지가 없거나 비어있으면 아래에서 LLM 재호출
 
     system_prompt = build_system_prompt(up.prompt_data)
     history = _build_history(db, user_product_id)
-    messages = [{"role": "system", "content": system_prompt}] + history + [{"role": "user", "content": EXIT_TRIGGER}]
+    messages = [{"role": "system", "content": system_prompt}] + history
 
     reply = None
     try:
-        raw_reply = await asyncio.to_thread(call_deepseek, messages)
-        final_code = _parse_code(raw_reply)
-        _logger.info(f"[EXIT] raw reply: {repr(raw_reply)} | parsed code: {final_code}")
-        reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", raw_reply).strip()
+        exit_result, farewell = await asyncio.gather(
+            asyncio.to_thread(call_deepseek_exit, messages, up.prompt_data),
+            asyncio.to_thread(call_deepseek_farewell, messages),
+        )
+        final_code = _parse_code(exit_result)
+        _logger.info(f"[EXIT] exit result: {repr(exit_result)} | parsed code: {final_code}")
+        reply = farewell
     except Exception as e:
         _logger.error(f"[EXIT] DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
         final_code = None

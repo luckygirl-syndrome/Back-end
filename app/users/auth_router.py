@@ -72,7 +72,7 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
     redis_client.delete(f"email_verify:verified:{user.email}")
     if posthog_client:
         posthog_client.capture(distinct_id=str(new_user.user_id), event="user_signed_up",
-                               properties={"has_nickname": bool(new_user.nickname)})
+                               properties={"provider": "email"})
         posthog_client.set(distinct_id=str(new_user.user_id), properties={"nickname": new_user.nickname})
     return success({"userId": new_user.user_id, "email": new_user.email, "nickname": new_user.nickname})
 
@@ -84,7 +84,8 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
         raise HTTPException(status_code=401, detail="로그인 정보가 올바르지 않습니다.")
     access_token = create_access_token(data={"sub": str(user.user_id)})
     if posthog_client:
-        posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in")
+        posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in",
+                               properties={"provider": "email"})
     return success({"accessToken": access_token, "tokenType": "bearer"})
 
 
@@ -97,9 +98,9 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
     user, is_new_user = _social_login_or_signup(db, "google", info["social_id"],
                                                  email=info["email"], nickname=info["nickname"],
                                                  profile_img=info["profile_img"])
+    access_token = create_access_token(data={"sub": str(user.user_id)})
     if is_new_user and posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "google"})
-    access_token = create_access_token(data={"sub": str(user.user_id)})
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "google"})
     return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
@@ -113,9 +114,9 @@ def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="카카오 토큰에서 유저 정보를 가져올 수 없습니다.")
     user, is_new_user = _social_login_or_signup(db, "kakao", info["social_id"],
                                                  nickname=info["nickname"], profile_img=info["profile_img"])
+    access_token = create_access_token(data={"sub": str(user.user_id)})
     if is_new_user and posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "kakao"})
-    access_token = create_access_token(data={"sub": str(user.user_id)})
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "kakao"})
     return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
@@ -128,13 +129,12 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
     if not info["social_id"]:
         raise HTTPException(status_code=400, detail="애플 토큰에서 유저 정보를 가져올 수 없습니다.")
     user, is_new_user = _social_login_or_signup(db, "apple", info["social_id"], email=info["email"])
+    access_token = create_access_token(data={"sub": str(user.user_id)})
     if is_new_user and posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "apple"})
-    access_token = create_access_token(data={"sub": str(user.user_id)})
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "apple"})
     return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
-
 
 
 @router.post("/auth/password-reset/request", summary="비밀번호 재설정 코드 발송", responses=_200(None))

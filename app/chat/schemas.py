@@ -21,7 +21,7 @@ class Interest(str, Enum):
 
 class Discovery(str, Enum):
     search = "쇼핑 앱에서 카테고리 검색 후 찾아보다 발견했어요"
-    influencer = "유튜버/인플루언서가 입은 것을 봤어요"
+    influencer = "유튜버/인플루언서/연예인이 입은 것을 봤어요"
     ranking = "쇼핑 앱에서 랭킹이나 유저 추천을 둘러보다 발견했어요"
     sns = "인스타/틱톡/X 같은 SNS 보다가 발견했어요"
     brand = "브랜드 계정에 신상이 추가된 걸 봤어요"

@@ -89,7 +89,7 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     return success({"accessToken": access_token, "tokenType": "bearer"})
 
 
-@router.post("/auth/google", summary="구글 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False}))
+@router.post("/auth/google", summary="구글 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
 def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)):
     payload = _verify_google_token(body.id_token)
     info = _extract_social_info("google", payload)
@@ -103,10 +103,11 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
         posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "google"})
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "google"})
-    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
+    is_profile_complete = user.age_group is not None
+    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete})
 
 
-@router.post("/auth/kakao", summary="카카오 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False}))
+@router.post("/auth/kakao", summary="카카오 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
 def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
     payload = _verify_kakao_token(body.id_token)
     info = _extract_social_info("kakao", payload)
@@ -119,10 +120,11 @@ def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
         posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "kakao"})
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "kakao"})
-    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
+    is_profile_complete = user.age_group is not None
+    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete})
 
 
-@router.post("/auth/apple", summary="애플 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False}))
+@router.post("/auth/apple", summary="애플 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
 def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
     payload = _verify_apple_token(body.id_token)
     info = _extract_social_info("apple", payload)
@@ -134,7 +136,8 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
         posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "apple"})
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "apple"})
-    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user})
+    is_profile_complete = user.age_group is not None
+    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete})
 
 
 @router.post("/auth/password-reset/request", summary="비밀번호 재설정 코드 발송", responses=_200(None))

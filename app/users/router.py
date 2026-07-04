@@ -139,7 +139,12 @@ def _social_login_or_signup(db: Session, provider: str, social_id: str, email=No
     ).first()
     if link:
         user = db.query(models.User).filter_by(user_id=link.user_id).first()
-        return user, False
+        if user is None:
+            # UserSocialProvider만 남고 User가 삭제된 경우 — 고아 링크 제거 후 신규 가입으로 처리
+            db.delete(link)
+            db.flush()
+        else:
+            return user, False
 
     # 2. 구 컬럼에서 조회 (마이그레이션)
     old_user = db.query(models.User).filter(

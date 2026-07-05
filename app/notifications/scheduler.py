@@ -26,8 +26,8 @@ def _check_purchase_followup():
             db.query(UserProduct)
             .filter(
                 UserProduct.is_purchased == True,
-                UserProduct.updated_at >= start,
-                UserProduct.updated_at <= end,
+                UserProduct.completed_at >= start,
+                UserProduct.completed_at <= end,
             )
             .all()
         )

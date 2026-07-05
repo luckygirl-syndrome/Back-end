@@ -36,7 +36,7 @@ def _check_purchase_followup():
             send_push_to_user(
                 db=db,
                 user_id=purchase.user_id,
-                title="또바",
+                title="또바바",
                 body="요즘 그 옷 마음에 드세요? 잘 활용하고 계신가요? 😊",
                 save_to_inbox=False,
             )
@@ -64,7 +64,7 @@ def _send_consideration_reminder():
             send_push_to_user(
                 db=db,
                 user_id=user_id,
-                title="또바",
+                title="또바바",
                 body="혹시 요즘 고민 중인 옷 있지 않아요? 같이 생각해봐요 🛍️",
                 save_to_inbox=False,
             )

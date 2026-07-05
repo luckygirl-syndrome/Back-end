@@ -1,7 +1,9 @@
 import os
+import re
 import time
 import json
 from pathlib import Path
+from typing import Optional
 from dotenv import load_dotenv
 from openai import OpenAI
 
@@ -13,6 +15,7 @@ if not API_KEY:
     raise ValueError("DEEPSEEK_API_KEY가 .env 파일에 없어. 확인해줘.")
 
 MODEL_NAME = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
+END_DECISION_MODEL = os.getenv("DEEPSEEK_END_DECISION_MODEL", MODEL_NAME)
 
 client = OpenAI(
     api_key=API_KEY,
@@ -82,7 +85,48 @@ def strip_internal_tags(text: str) -> tuple[str, bool]:
     return text, ended
 
 
-# ── 마무리 신호 감지 ──────────────────────────────────────────────────────────
+# ── 고민축 상태 태그 처리 ──────────────────────────────────────────────────────
+
+AXIS_TAG_RE = re.compile(r"<AXIS:([^>]*)>")
+AXIS_STATUS_RE = re.compile(r"<AXIS_STATUS:\s*(new|repeat)\s*>", re.IGNORECASE)
+
+
+def extract_axis_tags(text: str) -> tuple[str, Optional[str], Optional[str]]:
+    """<AXIS:..>, <AXIS_STATUS:..> 태그를 파싱해서 제거하고 (본문, 축이름, 상태)를 반환."""
+    if not text:
+        return text, None, None
+    axis_match = AXIS_TAG_RE.search(text)
+    status_match = AXIS_STATUS_RE.search(text)
+    axis = axis_match.group(1).strip() if axis_match else None
+    status = status_match.group(1).lower() if status_match else None
+    clean = AXIS_TAG_RE.sub("", text)
+    clean = AXIS_STATUS_RE.sub("", clean)
+    return clean.strip(), axis, status
+
+
+# ── 점수 수치 / 성향 코드 유출 방어 ─────────────────────────────────────────────
+
+SCORE_LEAK_RE = re.compile(r"\d+\s*점")
+
+
+def contains_leaked_score(text: str, type_code: str) -> bool:
+    if not text:
+        return False
+    if SCORE_LEAK_RE.search(text):
+        return True
+    if type_code and re.search(re.escape(type_code), text, re.IGNORECASE):
+        return True
+    return False
+
+
+def scrub_leaked_score(text: str, type_code: str) -> str:
+    scrubbed = SCORE_LEAK_RE.sub("", text)
+    if type_code:
+        scrubbed = re.sub(re.escape(type_code), "", scrubbed, flags=re.IGNORECASE)
+    scrubbed = re.sub(r"\s{2,}", " ", scrubbed)
+    scrubbed = re.sub(r"[,，]\s*(?=[.!?]|$)", "", scrubbed)
+    return scrubbed.strip()
+
 
 # ── 프롬프트 빌더 ─────────────────────────────────────────────────────────────
 
@@ -203,7 +247,7 @@ middle 턴에서 리스크를 짚었다면, 그 리스크를 말하는 데서 �
 첫 턴부터 가격, 리뷰, 소재, 활용도 중 하나를 최종 쟁점처럼 찍지 않는다.
 대신 유저가 다음 답변을 쉽게 할 수 있도록 선택지를 준다.
 
-좋은 예: '이 상품은 가격은 싸지만 자주 입던 스타일은 아니야. 원래 이 스타일을 좋아했어?'
+좋은 예: '이 상품은 가격은 싸지만 자주 입던 스타일은 아니야. 원래 이 스타일을 좋아했어?' 
 
 나쁜 예: '이 상품은 네 취향에 맞고 가격이 부담되니 활용도가 관건이야.'
 나쁜 예: '가격이 가볍진 않으니까 실제 코디랑 퀄리티, 소재를 같이 살펴보면 될 것 같아.'
@@ -217,55 +261,7 @@ middle 턴에서 리스크를 짚었다면, 그 리스크를 말하는 데서 �
 
 ## TURN_MODE 처리
 - [TURN_MODE:first]: 첫 응답. 최종 판단은 하지 않고, 취향에 맞는 이유를 짚은 뒤 유저가 바로 답할 수 있는 선택지형 질문 1개로 시작한다.
-- [TURN_MODE:free]: 일반 대화 턴. 아래 final readiness 조건을 보고 middle 또는 final 중 하나를 선택한다.
-  final 조건을 만족하지 않으면 반드시 middle로 답한다.
-
-## final readiness 규칙
-[TURN_MODE:free]에서 모델은 매 턴 먼저 내부적으로 final 가능 여부를 판단한다.
-final로 가는 경로는 두 가지다: 유저 주도 종료, 모델 주도 종료.
-
-### 유저 주도 종료
-유저의 마지막 발화가 종료·결정 신호(예: '결정해줘', '그래서 사?', '그럼 살게', '없어', '오케이', '고마워', '정리해줘')면 final로 갈 수 있다.
-질문형으로 되묻는 경우('그럼 사도 돼?', '중고로 찾아볼까?' 등)도 형태 자체는 final을 막지 않는다.
-단, 발화 안에 새 정보·새 고민·반박·찝찝함이나 아직 확인 안 된 정보가 있어서 판단이 바뀔 수 있으면, 그 부분부터 먼저 다루고 middle로 답한다.
-
-### 모델 주도 종료
-아래 기본 조건을 모두 만족하고, 추가 조건 중 하나 이상을 만족해야 모델이 먼저 final로 갈 수 있다.
-
-기본 조건:
-1. 유저의 핵심 고민축이 최소 2개 이상 다뤄졌다.
-2. 마지막 유저 발화가 새 고민·반박·찝찝함이 아니다.
-   단, 직전 assistant 질문에 대한 단순 답변인 턴에서는 그 답변을 먼저 middle에서 짧게 반영한 뒤에만 이 조건을 적용한다. 답변을 받은 바로 그 턴에는 final로 가지 않는다.
-3. 실제 코디나 착용 장면이 최소 1개 이상 나왔다.
-4. 대화에서 실제로 중요해진 고민축 1~2개가 정리됐다. product_info에 있다는 이유만으로 리스크를 의무적으로 만들지 않는다.
-5. 남은 질문이 없어도 구매/보류/조건부 구매 중 하나를 책임 있게 말할 수 있다.
-   남은 질문은 유저가 이미 꺼낸 고민이나 product_info에서 후회 가능성이 강한 항목에 한정하고, 완벽한 판단을 위해 새로 만든 질문은 '남은 질문'으로 치지 않는다.
-
-추가 조건 (하나 이상):
-- 직전 assistant 턴에서 이미 임시 판단이나 임시 결론으로 방향을 말한 적이 있다.
-- 같은 고민축이 2회 이상 반복되어 더 확인할 내용이 거의 없다.
-- 유저가 명확히 결론을 요구했다.
-
-기본 조건이나 추가 조건을 하나라도 못 만족하면 middle로 답한다.
-특히 유저가 기존 리스크를 반박했지만 그로 인해 새 판단축이 생긴 경우(예: '로우라이즈는 자주 입어' → 착용 낯섦은 낮아졌지만 옷장 중복 문제는 남음)는 조건 2를 만족하지 못한 것으로 본다.
-
-### 애매할 때 쓰는 완충 턴 (선택 사항, 필수 단계 아님)
-final로 가도 될 것 같은데 유저가 아직 끝났다고 보기 애매하면, final로 바로 가지 말고 middle에서 짧은 임시 결론을 말할 수 있다.
-이건 모든 대화에서 반드시 거쳐야 하는 단계가 아니다.
-
-좋은 완충 턴:
-'지금 기준이면 사도 되는 쪽에 가까워. 여기서 새로 걸리는 게 없다면 이 기준으로 정리해도 돼.'
-
-나쁜 완충 턴 (쓰지 않는다):
-'더 고민 있어?'
-'또 궁금한 거 있어?'
-'계속 얘기해볼래?'
-'결정할래?'
-위 나쁜 예처럼 유저에게 채팅을 더 하라고 노골적으로 묻지 않는다. 완충 턴은 질문이 아니라 짧은 임시 결론이다.
-
-중요: final은 앱 종료를 의미한다.
-final로 답하면 대화가 바로 종료되고 결과 카드가 생성된다.
-따라서 애매하면 final로 가지 말고 middle로 답한다.
+- [TURN_MODE:free]: 일반 대화 턴. 메인 상담 모델은 대화를 이어가는 자연스러운 답변만 생성한다. 종료 여부는 별도의 종료 판단 단계에서 처리한다.
 
 ## 새 고민축 처리 규칙
 유저가 새 고민축을 꺼낸 턴에서는 final로 가지 않는다.
@@ -301,21 +297,20 @@ final로 답하면 대화가 바로 종료되고 결과 카드가 생성된다.
 품질 대비 비싼 건지, 디자인 희소성 때문에 아까운 건지, 할인 때문에 조급해진 건지로 나눠서 짚는다.
 디자인 희소성이 크면 final 행동으로 '중고 먼저 찾아보고 없으면 구매'를 제안할 수 있다. 매번 쓰지 말고 가격이 마지막 리스크일 때만 사용한다.
 
-## final 답변 형식
-final은 정확히 3문장으로 쓴다.
-1문장: 최종 방향
-2문장: 주된 이유 2개
-3문장: 솔루션 선택 규칙에서 고른 실행 가능한 행동 1개
+## 고민축 태그 (내부용, 화면에 보이지 않음)
 
-final에서도 '무조건 사'처럼 말하지 않는다.
-구매라면 '조건부로 사도 되는 쪽' 또는 '사도 되는 쪽에 가까워'처럼 표현한다.
-보류라면 '지금은 보류가 더 안전해'처럼 말한다.
+매 턴 답변 마지막 줄에 이번 턴에서 중심적으로 다룬 고민축 이름만 아래 형식으로 붙인다.
 
-## 내부 종료 태그
-final로 답하는 턴에서는 답변 마지막 줄에 반드시 <END_DECISION>을 붙인다.
-이 태그가 붙으면 앱은 final 답변을 출력한 직후 종료 코드와 결과 요약을 생성하고 대화를 종료한다.
-middle 턴에서는 절대 붙이지 않는다.
-애매하면 middle로 답한다.
+<AXIS:축이름>
+
+- 축이름은 이번 턴에서 중심적으로 다룬 고민축을 짧은 명사로 쓴다. 예: 가격, 착용감, 코디, 세탁, 사이즈, 중복, 소재.
+- 이 태그는 유저에게 보이지 않는 내부 신호이며, 답변 본문의 문체나 분량 규칙에는 영향을 주지 않는다.
+- 메인 상담 답변에서는 <END_DECISION>을 절대 출력하지 않는다.
+
+## 고민축 개수는 직접 세지 않는다
+매 턴 시작 부분에 [현재까지 다뤄진 고민축: N개 (...)] 형태로 지금까지 다뤄진 고민축 정보가 주어질 수 있다.
+이 정보는 코드가 누적 계산한 값이므로 그대로 신뢰한다.
+대화 로그를 처음부터 다시 훑어서 고민축 개수를 직접 세지 않는다.
 
 ## 말투
 - 점수 수치 금지. '취향에 꽤 닿아 있고', '마음이 너무 앞서간 상태는 아니고', '끌림은 있는데 아직 확인할 게 남아 있고' 식으로만.
@@ -345,6 +340,16 @@ def build_exit_prompt(data: dict) -> str:
 {json.dumps(data, ensure_ascii=False, indent=2)}
 ```
 
+## 종료 판단 정보
+```json
+{json.dumps(data.get("end_decision", {}), ensure_ascii=False, indent=2)}
+```
+
+## 마지막 유저 발화
+```json
+{json.dumps(data.get("last_user_input", ""), ensure_ascii=False)}
+```
+
 ## 금지
 - user_type의 type_code (예: DIMO, NUTE 같은 성향 코드)는 결과 CODE로 출력하지 않는다.
 - CODE는 반드시 아래 CODE 목록 중 하나만 출력한다.
@@ -361,9 +366,77 @@ def build_exit_prompt(data: dict) -> str:
 구매 의향이 아니라 구매 판단의 건강함과 후회 가능성 기준으로 CODE를 선택한다.
 마지막 유저 발화를 최종 결정 신호로 참고한다.
 
+end_decision.end_type이 defer이면 HOLD_REASONABLE을 우선한다.
+end_decision.end_type이 hold이면 HOLD_REASONABLE을 우선한다.
+end_decision.end_type이 buy이면 BUY_CONDITIONALLY_READY 또는 BUY_CONFIDENT_GROUNDED 중 고른다.
+확인할 조건이 남아 있으면 BUY_CONDITIONALLY_READY를 우선한다.
+end_decision.end_type이 thanks 또는 model_decision이면 전체 대화 맥락을 기준으로 고른다.
+
 ## 출력 형식 (반드시 아래 형식만 출력. 다른 말 없음)
 CODE: 코드명
 RESULT_SUMMARY: 이 옷에 대한 판단을 한 문장으로 (너무 친절하지 않게, 결과 카드 문장처럼)""".strip()
+
+
+def build_end_decision_prompt() -> str:
+    return """## 역할
+너는 쇼핑 고민 챗봇의 종료 여부만 판단하는 분류기다.
+상담 답변을 새로 쓰지 않는다.
+대화를 종료할지 계속할지만 판단한다.
+
+## 출력 형식
+반드시 JSON만 출력한다.
+다른 설명, 문장, 마크다운은 출력하지 않는다.
+
+{
+  "should_end": true,
+  "reason": "짧은 이유",
+  "end_type": "defer|buy|hold|thanks|model_decision|none"
+}
+
+## end_type 정의
+- defer: 유저가 나중에 다시 생각하겠다, 보류하겠다, 장바구니/위시리스트에 넣겠다고 말한 경우
+- buy: 유저가 사겠다, 결제하겠다, 주문하겠다고 말한 경우
+- hold: 유저가 안 사겠다, 넘기겠다, 포기하겠다고 말한 경우
+- thanks: 유저가 고맙다, 도움 됐다 등 마무리 인사를 한 경우
+- model_decision: assistant의 마지막 답변이 이미 충분히 최종 정리처럼 끝났고, 대화가 자연스럽게 닫힌 경우
+- none: 계속 대화해야 하는 경우
+
+## 종료로 판단하는 경우
+아래 중 하나면 should_end=true로 판단한다.
+
+1. 유저가 직접 구매/보류/포기/나중에 다시 보기 같은 행동을 결정했다.
+예: "3일 뒤에 다시 생각할게", "일단 보류할게", "장바구니에 넣어둘게", "오늘은 안 살래", "그럼 살게"
+
+2. 유저가 명확히 마무리 인사를 했다.
+예: "그래 고마워", "오키 고마워", "도움 됐다"
+
+3. 유저가 결론을 요구했고, assistant의 마지막 답변이 최종 방향과 실행 기준을 충분히 제시했다.
+
+4. 최근 대화에서 주요 고민이 충분히 정리됐고, assistant의 마지막 답변이 final처럼 닫힌 정리로 끝난 경우
+
+## 종료로 판단하면 안 되는 경우
+아래 중 하나면 should_end=false로 판단한다.
+
+1. 유저가 새 고민, 새 정보, 반박, 찝찝함을 말했다.
+예: "근데 비침이 걱정돼", "리뷰 보니까 작대", "아직 애매해", "이염은 어떡하지?"
+
+2. 유저가 질문을 했다.
+예: "그럼 중고로 찾아볼까?", "반품 가능하면 사도 돼?", "이 색은 어때?"
+
+3. assistant의 마지막 답변이 질문으로 끝났다.
+
+4. assistant의 마지막 답변이 중간 판단, 확인법, 리뷰 확인, 사이즈 확인 등 다음 행동을 유도하는 middle 답변이다.
+
+5. 유저가 단순히 짧게 반응했지만, 대화를 끝낸다는 의도가 명확하지 않다.
+예: "아하", "그렇구나", "음", "오..."
+단, "그래 고마워"처럼 감사와 마무리가 같이 있으면 종료로 볼 수 있다.
+
+## 판단 기준
+- 특정 단어 하나만 보고 판단하지 않는다.
+- 마지막 유저 발화와 assistant 마지막 답변을 함께 본다.
+- 애매하면 should_end=false로 둔다.
+- 종료 오탐이 가장 위험하다. 확신이 낮으면 종료하지 않는다.
+"""
 
 
 # ── API 호출 / 응답 추출 ─────────────────────────────────────────────────────
@@ -391,7 +464,12 @@ def extract_visible_answer(resp) -> str:
     return content.strip() if content else ""
 
 
-def get_bot_msg(client, model, messages, system_override=None) -> str:
+MAX_LEAK_RETRIES = 2  # 최초 응답 포함 최대 3회까지 재생성 시도
+
+
+def get_bot_msg(client, model, messages, data: dict, system_override=None) -> str:
+    type_code = data.get("user_type", {}).get("code", "")
+
     resp = call_api(client, model, messages, system_override)
     bot_msg = extract_visible_answer(resp)
 
@@ -400,9 +478,78 @@ def get_bot_msg(client, model, messages, system_override=None) -> str:
         bot_msg = extract_visible_answer(resp)
 
     if not bot_msg:
-        bot_msg = "지금 답변 생성이 비어서 다시 시도해야 할 것 같아."
+        return "지금 답변 생성이 비어서 다시 시도해야 할 것 같아."
+
+    # ── 점수 수치 / 성향 코드 유출 방어: 우선 재생성 시도 ──────────────────
+    attempts = 0
+    while contains_leaked_score(bot_msg, type_code) and attempts < MAX_LEAK_RETRIES:
+        attempts += 1
+        resp = call_api(client, model, messages, system_override)
+        retry_msg = extract_visible_answer(resp)
+        if retry_msg:
+            bot_msg = retry_msg
+
+    # 재생성으로도 못 걸러지면 마지막 방어선으로 정규식 필터링
+    if contains_leaked_score(bot_msg, type_code):
+        bot_msg = scrub_leaked_score(bot_msg, type_code)
 
     return bot_msg
+
+
+def decide_should_end(
+    client,
+    model,
+    messages: list[dict],
+    last_user_input: str,
+    last_assistant_answer: str,
+    seen_axes: set[str],
+) -> dict:
+    prompt = build_end_decision_prompt()
+
+    payload = {
+        "recent_conversation": messages[-8:],
+        "last_user_input": last_user_input,
+        "last_assistant_answer": last_assistant_answer,
+        "seen_axis_count": len(seen_axes),
+        "seen_axes": list(seen_axes),
+    }
+
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": prompt},
+            {"role": "user", "content": json.dumps(payload, ensure_ascii=False)},
+        ],
+        temperature=0,
+        max_tokens=120,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+
+    raw = extract_visible_answer(resp)
+
+    try:
+        data = json.loads(raw)
+    except Exception:
+        return {
+            "should_end": False,
+            "reason": "JSON 파싱 실패",
+            "end_type": "none",
+        }
+
+    should_end = bool(data.get("should_end", False))
+    end_type = data.get("end_type", "none")
+    reason = data.get("reason", "")
+
+    allowed_types = {"defer", "buy", "hold", "thanks", "model_decision", "none"}
+    if end_type not in allowed_types:
+        end_type = "none"
+        should_end = False
+
+    return {
+        "should_end": should_end,
+        "reason": reason,
+        "end_type": end_type,
+    }
 
 
 # ── 유틸 ────────────────────────────────────────────────────────────────────
@@ -421,12 +568,12 @@ def print_bot(text):
     print(f"\n🤖  {text}\n")
 
 
-def run_exit(client, MODEL_NAME, messages, exit_prompt, turn, total_elapsed, label="EXIT"):
+def run_exit(client, MODEL_NAME, messages, exit_prompt, data, turn, total_elapsed, label="EXIT"):
     print(f"\n{DIVIDER}")
     print(f"  [{label}]  |  총 턴: {turn}  |  총 소요 시간: {total_elapsed:.2f}초")
     print(f"{DIVIDER}")
     t0 = time.time()
-    raw_output = get_bot_msg(client, MODEL_NAME, messages, system_override=exit_prompt)
+    raw_output = get_bot_msg(client, MODEL_NAME, messages, data, system_override=exit_prompt)
     code_output = validate_exit_code(raw_output)
     elapsed = time.time() - t0
     print(f"\n  종료 코드 / 결과창 요약 ({elapsed:.2f}초)")
@@ -449,21 +596,23 @@ def main():
     messages = [{"role": "system", "content": chat_prompt}]
     turn = 0
     total_elapsed = 0.0
+    seen_axes: set[str] = set()
 
     # ── 첫 답변 ──────────────────────────────────────────────────────────────
     turn += 1
     messages.append({"role": "user", "content": "[TURN_MODE:first]"})
     t0 = time.time()
-    raw_bot_msg = get_bot_msg(client, MODEL_NAME, messages)
+    raw_bot_msg = get_bot_msg(client, MODEL_NAME, messages, INPUT_JSON)
     elapsed = time.time() - t0
     total_elapsed += elapsed
-    bot_msg, ended = strip_internal_tags(raw_bot_msg)
+    clean_text, axis, _status = extract_axis_tags(raw_bot_msg)
+    bot_msg, _ignored_ended = strip_internal_tags(clean_text)
+
+    if axis:
+        seen_axes.add(axis)
     messages.append({"role": "assistant", "content": bot_msg})
     print_meta(turn, elapsed)
     print_bot(bot_msg)
-    if ended:
-        run_exit(client, MODEL_NAME, messages, exit_prompt, turn, total_elapsed, label="AUTO EXIT")
-        return
 
     # ── 대화 루프 ─────────────────────────────────────────────────────────────
     while True:
@@ -471,26 +620,59 @@ def main():
         if not user_input:
             continue
 
-        # 테스트용 수동 종료
         if user_input.lower() in ("q", "quit", "종료", "그만"):
-            run_exit(client, MODEL_NAME, messages, exit_prompt, turn, total_elapsed, label="EXIT")
+            run_exit(client, MODEL_NAME, messages, exit_prompt, INPUT_JSON, turn, total_elapsed, label="EXIT")
             break
+
+        if seen_axes:
+            state_line = f"[현재까지 다뤄진 고민축: {len(seen_axes)}개 ({', '.join(seen_axes)})]\n"
+        else:
+            state_line = ""
 
         messages.append({
             "role": "user",
-            "content": f"[TURN_MODE:free]\n{user_input}"
+            "content": f"[TURN_MODE:free]\n{state_line}{user_input}"
         })
         turn += 1
         t0 = time.time()
-        raw_bot_msg = get_bot_msg(client, MODEL_NAME, messages)
+        raw_bot_msg = get_bot_msg(client, MODEL_NAME, messages, INPUT_JSON)
         elapsed = time.time() - t0
         total_elapsed += elapsed
-        bot_msg, ended = strip_internal_tags(raw_bot_msg)
+        clean_text, axis, _status = extract_axis_tags(raw_bot_msg)
+        bot_msg, _ignored_ended = strip_internal_tags(clean_text)
+
+        if axis:
+            seen_axes.add(axis)
+
         messages.append({"role": "assistant", "content": bot_msg})
         print_meta(turn, elapsed)
         print_bot(bot_msg)
-        if ended:
-            run_exit(client, MODEL_NAME, messages, exit_prompt, turn, total_elapsed, label="AUTO EXIT")
+
+        end_decision = decide_should_end(
+            client=client,
+            model=END_DECISION_MODEL,
+            messages=messages,
+            last_user_input=user_input,
+            last_assistant_answer=bot_msg,
+            seen_axes=seen_axes,
+        )
+
+        if end_decision.get("should_end"):
+            exit_data = {
+                **INPUT_JSON,
+                "end_decision": end_decision,
+                "last_user_input": user_input,
+            }
+            run_exit(
+                client,
+                MODEL_NAME,
+                messages,
+                build_exit_prompt(exit_data),
+                exit_data,
+                turn,
+                total_elapsed,
+                label="AUTO EXIT",
+            )
             break
 
 
@@ -501,12 +683,13 @@ def build_system_prompt(data: dict) -> str:
 
 
 def call_deepseek(messages: list, prompt_data: dict = None) -> str:
-    raw = get_bot_msg(client, MODEL_NAME, messages)
+    data = prompt_data or {}
+    raw = get_bot_msg(client, MODEL_NAME, messages, data)
     reply, ended = strip_internal_tags(raw)
     if ended and prompt_data:
         exit_msgs = messages + [{"role": "assistant", "content": reply}]
         exit_p = build_exit_prompt(prompt_data)
-        code_raw = get_bot_msg(client, MODEL_NAME, exit_msgs, system_override=exit_p)
+        code_raw = get_bot_msg(client, MODEL_NAME, exit_msgs, prompt_data, system_override=exit_p)
         code_raw = validate_exit_code(code_raw)
         code_line = next((l for l in code_raw.splitlines() if l.startswith("CODE:")), "")
         if code_line:
@@ -516,7 +699,7 @@ def call_deepseek(messages: list, prompt_data: dict = None) -> str:
 
 def call_deepseek_exit(messages: list, prompt_data: dict) -> str:
     exit_p = build_exit_prompt(prompt_data)
-    raw = get_bot_msg(client, MODEL_NAME, messages, system_override=exit_p)
+    raw = get_bot_msg(client, MODEL_NAME, messages, prompt_data, system_override=exit_p)
     return validate_exit_code(raw)
 
 
@@ -525,9 +708,10 @@ _FAREWELL_TRIGGER = (
     "대화가 종료돼. 지금까지 나눈 대화를 바탕으로 따뜻하게 1~2문장으로 마무리해줘."
 )
 
+
 def call_deepseek_farewell(messages: list) -> str:
     msgs = messages + [{"role": "user", "content": _FAREWELL_TRIGGER}]
-    raw = get_bot_msg(client, MODEL_NAME, msgs)
+    raw = get_bot_msg(client, MODEL_NAME, msgs, {})
     reply, _ = strip_internal_tags(raw)
     return reply
 

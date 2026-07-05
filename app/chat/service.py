@@ -388,7 +388,7 @@ def _save_message(db: Session, user_id: int, user_product_id: int, role: str, co
 
 
 async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> Optional[dict]:
-    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
+    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek, extract_axis_tags
     from app.core.redis_client import redis_client
 
     up = (
@@ -430,11 +430,12 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
     ]
 
     try:
-        reply = await asyncio.to_thread(call_deepseek, messages, up.prompt_data)
+        raw_reply = await asyncio.to_thread(call_deepseek, messages, up.prompt_data)
     except Exception as e:
         _logger.error(f"[GREET] DeepSeek 호출 실패 (user_product_id={user_product_id}): {e}")
         redis_client.delete(lock_key)
         return None
+    reply, _axis, _status = extract_axis_tags(raw_reply)
     _save_message(db, user_id, user_product_id, "assistant", reply)
     _notify_chat(db, user_id, user_product_id, reply)
     redis_client.delete(lock_key)
@@ -444,7 +445,7 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
 async def send_message(
     db: Session, user_product_id: int, user_id: int, message: str, images: list = None
 ) -> Optional[dict]:
-    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek
+    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek, extract_axis_tags
     from fastapi import HTTPException, UploadFile
     from app.core.s3 import upload_image
 
@@ -491,6 +492,7 @@ async def send_message(
         raise HTTPException(status_code=503, detail="AI 응답 생성에 실패했습니다. 다시 시도해주세요.")
 
     final_code = _parse_code(reply)
+    reply, _axis, _status = extract_axis_tags(reply)
     clean_reply = re.sub(r"\n?CODE:\s*\w+\s*$", "", reply).strip()
 
     if clean_reply:

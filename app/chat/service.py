@@ -445,7 +445,11 @@ async def generate_greeting(db: Session, user_product_id: int, user_id: int) -> 
 async def send_message(
     db: Session, user_product_id: int, user_id: int, message: str, images: list = None
 ) -> Optional[dict]:
-    from app.chat.chatbot_deepseek import build_system_prompt, call_deepseek, extract_axis_tags
+    from app.chat.chatbot_deepseek import (
+        build_system_prompt, call_deepseek, extract_axis_tags,
+        decide_should_end, call_deepseek_exit, call_deepseek_farewell,
+        client as deepseek_client, END_DECISION_MODEL,
+    )
     from fastapi import HTTPException, UploadFile
     from app.core.s3 import upload_image
 
@@ -502,13 +506,63 @@ async def send_message(
     if final_code:
         up.final_code = final_code
         up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
-    db.commit()
+        db.commit()
+        return {
+            "reply": clean_reply,
+            "is_exit": True,
+            "finalCode": final_code,
+            "finalScore": up.final_score,
+        }
 
+    # 종료 판단 (또바가 먼저 종료 트리거)
+    updated_history = _build_history(db, user_product_id)
+    end_messages = [{"role": "system", "content": system_prompt}] + updated_history
+    end_decision = await asyncio.to_thread(
+        decide_should_end,
+        deepseek_client,
+        END_DECISION_MODEL,
+        end_messages,
+        message,
+        clean_reply,
+        set(),
+    )
+    _logger.info(f"[END_DECISION] user_product_id={user_product_id} result={end_decision}")
+
+    if end_decision.get("should_end"):
+        try:
+            exit_result, farewell = await asyncio.gather(
+                asyncio.to_thread(call_deepseek_exit, end_messages, up.prompt_data),
+                asyncio.to_thread(call_deepseek_farewell, end_messages),
+            )
+            exit_code = _parse_code(exit_result)
+        except Exception as e:
+            _logger.error(f"[END_DECISION] exit flow 실패 (user_product_id={user_product_id}): {e}")
+            exit_code, farewell = None, None
+
+        if not exit_code:
+            exit_code = "NEUTRAL_EXPLORING"
+
+        if farewell:
+            _save_message(db, user_id, user_product_id, "assistant", farewell)
+            _notify_chat(db, user_id, user_product_id, farewell)
+
+        up.final_code = exit_code
+        up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, exit_code)
+        db.commit()
+
+        return {
+            "reply": farewell or clean_reply,
+            "is_exit": True,
+            "finalCode": exit_code,
+            "finalScore": up.final_score,
+        }
+
+    db.commit()
     return {
         "reply": clean_reply,
-        "is_exit": final_code is not None,
-        "finalCode": final_code,
-        "finalScore": up.final_score if final_code else None,
+        "is_exit": False,
+        "finalCode": None,
+        "finalScore": None,
     }
 
 

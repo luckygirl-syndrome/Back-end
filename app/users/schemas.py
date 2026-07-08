@@ -19,6 +19,9 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+class RefreshTokenRequest(BaseModel):
+    refreshToken: str
+
 # 2. 기본 프로필 조회용
 class ProfileData(BaseModel):
     nickname: str

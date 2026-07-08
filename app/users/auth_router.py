@@ -8,7 +8,10 @@ from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.response import success
 from app.core.observability import posthog_client
-from app.core.security import create_access_token, hash_password, verify_password
+from app.core.security import (
+    create_access_token, create_refresh_token, verify_refresh_token, revoke_refresh_token,
+    hash_password, verify_password,
+)
 from app.core.redis_client import redis_client
 from app.core.email import send_password_reset_code, send_signup_verification_code
 from app.users import models, schemas
@@ -83,10 +86,11 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
     if not user or not verify_password(user_data.password, user.password):
         raise HTTPException(status_code=401, detail="로그인 정보가 올바르지 않습니다.")
     access_token = create_access_token(data={"sub": str(user.user_id)})
+    refresh_token = create_refresh_token(user.user_id)
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in",
                                properties={"provider": "email"})
-    return success({"accessToken": access_token, "tokenType": "bearer"})
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer"})
 
 
 @router.post("/auth/google", summary="구글 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
@@ -99,12 +103,13 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
                                                  email=info["email"], nickname=info["nickname"],
                                                  profile_img=info["profile_img"])
     access_token = create_access_token(data={"sub": str(user.user_id)})
+    refresh_token = create_refresh_token(user.user_id)
     if is_new_user and posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "google"})
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "google"})
     is_profile_complete = user.age_group is not None
-    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete})
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete})
 
 
 @router.post("/auth/kakao", summary="카카오 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
@@ -116,12 +121,13 @@ def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
     user, is_new_user = _social_login_or_signup(db, "kakao", info["social_id"],
                                                  nickname=info["nickname"], profile_img=info["profile_img"])
     access_token = create_access_token(data={"sub": str(user.user_id)})
+    refresh_token = create_refresh_token(user.user_id)
     if is_new_user and posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "kakao"})
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "kakao"})
     is_profile_complete = user.age_group is not None
-    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete})
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete})
 
 
 @router.post("/auth/apple", summary="애플 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
@@ -132,12 +138,31 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="애플 토큰에서 유저 정보를 가져올 수 없습니다.")
     user, is_new_user = _social_login_or_signup(db, "apple", info["social_id"], email=info["email"])
     access_token = create_access_token(data={"sub": str(user.user_id)})
+    refresh_token = create_refresh_token(user.user_id)
     if is_new_user and posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "apple"})
     if posthog_client:
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "apple"})
     is_profile_complete = user.age_group is not None
-    return success({"accessToken": access_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete})
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete})
+
+
+@router.post("/auth/refresh", summary="액세스 토큰 재발급", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer"}))
+def refresh_access_token(body: schemas.RefreshTokenRequest, db: Session = Depends(get_db)):
+    user_id = verify_refresh_token(body.refreshToken)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="유효하지 않거나 만료된 리프레시 토큰입니다.")
+    user = db.query(models.User).filter(models.User.user_id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="유저를 찾을 수 없습니다.")
+    access_token = create_access_token(data={"sub": str(user.user_id)})
+    return success({"accessToken": access_token, "tokenType": "bearer"})
+
+
+@router.post("/auth/logout", summary="로그아웃 (리프레시 토큰 폐기)", responses=_200(None))
+def logout(body: schemas.RefreshTokenRequest):
+    revoke_refresh_token(body.refreshToken)
+    return success(None)
 
 
 @router.post("/auth/password-reset/request", summary="비밀번호 재설정 코드 발송", responses=_200(None))

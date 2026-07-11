@@ -13,14 +13,14 @@ scheduler = AsyncIOScheduler(timezone="Asia/Seoul")
 
 
 def _check_purchase_followup():
-    """구매 4일 후 만족도 알림"""
+    """구매 1주일 후 만족도 알림"""
     from app.notifications.service import send_push_to_user
 
     db = SessionLocal()
     try:
-        four_days_ago = datetime.datetime.now() - datetime.timedelta(days=4)
-        start = four_days_ago.replace(hour=0, minute=0, second=0, microsecond=0)
-        end = four_days_ago.replace(hour=23, minute=59, second=59, microsecond=999999)
+        one_week_ago = datetime.datetime.now() - datetime.timedelta(days=7)
+        start = one_week_ago.replace(hour=0, minute=0, second=0, microsecond=0)
+        end = one_week_ago.replace(hour=23, minute=59, second=59, microsecond=999999)
 
         purchases = (
             db.query(UserProduct)
@@ -37,7 +37,7 @@ def _check_purchase_followup():
                 db=db,
                 user_id=purchase.user_id,
                 title="또바바",
-                body="요즘 그 옷 마음에 드세요? 잘 활용하고 계신가요? 😊",
+                body="일주일 전에 산 옷 마음에 드세요? 또바에게 알려주세요!",
                 save_to_inbox=False,
             )
         logger.info(f"구매 후 만족도 알림 발송: {len(purchases)}건")
@@ -65,7 +65,7 @@ def _send_consideration_reminder():
                 db=db,
                 user_id=user_id,
                 title="또바바",
-                body="혹시 요즘 고민 중인 옷 있지 않아요? 같이 생각해봐요 🛍️",
+                body="요즘 새로 고민중인 옷 있어요? 또바가 해결해줄게요!",
                 save_to_inbox=False,
             )
         logger.info(f"고민 옷 리마인더 발송: {len(user_ids)}건")

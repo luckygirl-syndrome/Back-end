@@ -713,6 +713,7 @@ def call_deepseek_farewell(messages: list) -> str:
     msgs = messages + [{"role": "user", "content": _FAREWELL_TRIGGER}]
     raw = get_bot_msg(client, MODEL_NAME, msgs, {})
     reply, _ = strip_internal_tags(raw)
+    reply, _axis, _status = extract_axis_tags(reply)
     return reply
 
 

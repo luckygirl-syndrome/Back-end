@@ -748,5 +748,45 @@ def main():
             break
 
 
+# ── 서비스 레이어 인터페이스 ─────────────────────────────────────────────────────
+# app/chat/service.py가 호출하는 이름들. get_bot_msg/get_exit_msg/extract_axis_tag를
+# 감싸서 서비스 레이어가 기대하는 시그니처(복수형 extract_axis_tags 등)로 맞춰준다.
+
+def build_system_prompt(data: dict) -> str:
+    return build_chat_prompt(data)
+
+
+def extract_axis_tags(text: str) -> tuple[str, Optional[str], Optional[str]]:
+    clean, axis = extract_axis_tag(text)
+    return clean, axis, None
+
+
+def call_deepseek(messages: list, prompt_data: dict = None) -> str:
+    data = prompt_data or {}
+    raw = get_bot_msg(client, MODEL_NAME, messages, data)
+    reply, _ended = strip_internal_tags(raw)
+    return reply
+
+
+def call_deepseek_exit(messages: list, prompt_data: dict) -> str:
+    exit_p = build_exit_prompt(prompt_data)
+    raw = get_exit_msg(client, MODEL_NAME, messages, prompt_data, system_override=exit_p)
+    return validate_exit_code(raw)
+
+
+_FAREWELL_TRIGGER = (
+    "[TURN_MODE:free]\n"
+    "대화가 종료돼. 지금까지 나눈 대화를 바탕으로 따뜻하게 1~2문장으로 마무리해줘."
+)
+
+
+def call_deepseek_farewell(messages: list) -> str:
+    msgs = messages + [{"role": "user", "content": _FAREWELL_TRIGGER}]
+    raw = get_bot_msg(client, MODEL_NAME, msgs, {})
+    reply, _ended = strip_internal_tags(raw)
+    reply, _axis, _status = extract_axis_tags(reply)
+    return reply
+
+
 if __name__ == "__main__":
     main()

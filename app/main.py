@@ -1,6 +1,8 @@
+import os
 import redis
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, Depends, HTTPException
+from fastapi.responses import FileResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import text
 from app.core.config import settings
@@ -62,6 +64,14 @@ async def global_exception_handler(request: Request, exc: Exception):
 @app.get("/")
 def root():
     return {"message": f"Welcome to {settings.PROJECT_NAME} API"}
+
+
+@app.get("/privacy")
+def privacy_policy():
+    return FileResponse(
+        os.path.join(os.path.dirname(__file__), "static", "legal", "privacy.html"),
+        media_type="text/html",
+    )
 
 
 # 헬스체크 API (DB + Redis)

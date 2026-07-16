@@ -33,5 +33,8 @@ jobs:
             
             echo "🧹 오래된 이미지 정리 중..."
             docker image prune -f
-            
+
+            echo "🧹 오래된 빌드 캐시 정리 중 (디스크 용량 확보)..."
+            docker builder prune -af --filter "until=168h" || true
+
             echo "✅ 배포가 성공적으로 완료되었습니다!"

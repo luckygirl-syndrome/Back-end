@@ -66,7 +66,11 @@ EXTRACT_PROMPT = """당신은 쇼핑 스크린샷에서 상품 정보를 추출�
 3. **has_discount** (0|1): 메인 할인 표시(취소선 원가+할인가, 또는 할인율 빨간 강조)가 있을 때만 1. 쿠폰가만 있으면 0.
 4. **discounted_price** (number|null): 메인 할인가. 메인 할인 없으면 null.
 5. **discount_rate** (number|null): 할인율(%). discounted_price와 동일 기준.
-6. **review_count** (number|null): 리뷰 수. 화면에 안 보이면 null.
+6. **review_count** (number|null): 현재 메인 상품의 리뷰 수.
+   - 화면 전체에서 리뷰 탭·메뉴·버튼에 표시된 숫자도 추출한다.
+   - 예: "리뷰 2", "리뷰(2)", "상품리뷰 15", "후기 128개" → 2, 2, 15, 128
+   - 추천·연관·광고 상품의 리뷰 수는 제외한다.
+   - 메인 상품의 리뷰 수가 화면에 없을 때만 null.
 7. **review_score** (number|null): 평점 0~5. 화면에 명시 없으면 null. (nn%가 만족한 상품이면 5점 만점으로 변환하여 소수점 두자리수까지 출력)
 
 ## 마케팅 분석

@@ -43,14 +43,22 @@ async def start_chat(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    result = await service.analyze_and_create_session(
-        db=db,
-        images=images,
-        user=current_user,
-        price_feeling=price_feeling.value,
-        interest=interest.value,
-        discovery=discovery.value,
-    )
+    # 유저별 동시 생성 잠금 — 더블탭·분석 중 재시도로 세션이 2개 생기는 것 방지
+    lock_key = f"chat_start_lock:{current_user.user_id}"
+    acquired = redis_client.set(lock_key, 1, nx=True, ex=120)
+    if not acquired:
+        raise HTTPException(status_code=409, detail="이미 상품을 분석하고 있어요. 잠시 후 채팅 목록을 확인해주세요.")
+    try:
+        result = await service.analyze_and_create_session(
+            db=db,
+            images=images,
+            user=current_user,
+            price_feeling=price_feeling.value,
+            interest=interest.value,
+            discovery=discovery.value,
+        )
+    finally:
+        redis_client.delete(lock_key)
     if not result:
         raise HTTPException(status_code=500, detail="이미지 분석에 실패했습니다.")
     return success(result)

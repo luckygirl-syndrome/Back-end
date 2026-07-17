@@ -135,7 +135,8 @@ def _parse_period(period: str) -> datetime:
 
 def get_stats(db: Session, user_id: int, period: str = "3m") -> schemas.StatsResponse:
     """홈 통계: 최근 또바바 점수 4개 + 구매 전환율 + 소비 만족도"""
-    # 최근 또바바 점수 4개 (final_score 있는 것만, 최신순)
+    # 최근 또바바 점수 4개 (final_score 있는 것만, 점수 산출 시각 최신순)
+    # scored_at 도입 전 데이터는 NULL — completed_at(구매 결정 시각) → requested_at(상담 시작) 순 fallback
     recent_rows = (
         db.query(UserProduct, Product)
         .join(Product, UserProduct.product_id == Product.product_id)
@@ -144,7 +145,7 @@ def get_stats(db: Session, user_id: int, period: str = "3m") -> schemas.StatsRes
             UserProduct.product_id != 0,
             UserProduct.final_score.isnot(None),
         )
-        .order_by(UserProduct.completed_at.desc())
+        .order_by(func.coalesce(UserProduct.scored_at, UserProduct.completed_at, UserProduct.requested_at).desc())
         .limit(4)
         .all()
     )

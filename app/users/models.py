@@ -15,18 +15,12 @@ class User(Base):
     social_id = Column(String(255), nullable=True)
     fbti_type = Column(Text, nullable=True)
     profile_img = Column(String(255), default="0")
-    phone = Column(String(20), nullable=True, unique=True)
 
     favorite_shops = Column(JSONB, nullable=True)
     style = Column(JSONB, nullable=True)
     age_group = Column(String(20), nullable=True)
     regret_frequency = Column(String(30), nullable=True)
     regret_reasons = Column(JSONB, nullable=True)
-
-    mu_like = Column(JSONB, nullable=True)
-    mu_regret = Column(JSONB, nullable=True)
-    n_pos = Column(Integer, default=0)
-    n_neg = Column(Integer, default=0)
 
 
 class UserSocialProvider(Base):

@@ -506,6 +506,7 @@ async def send_message(
     if final_code:
         up.final_code = final_code
         up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
+        up.scored_at = datetime.now()
         db.commit()
         return {
             "reply": clean_reply,
@@ -543,6 +544,7 @@ async def send_message(
 
         up.final_code = exit_code
         up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, exit_code)
+        up.scored_at = datetime.now()
         db.commit()
 
         return {
@@ -612,6 +614,7 @@ async def exit_chat(db: Session, user_product_id: int, user_id: int) -> Optional
 
     up.final_code = final_code
     up.final_score = _calc_final_score(up.impulse_score or 0, up.preference_score or 0, final_code)
+    up.scored_at = datetime.now()
     db.commit()
 
     _notify_chat(db, user_id, user_product_id, reply or "")

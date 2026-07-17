@@ -52,6 +52,7 @@ class UserProduct(Base):
     feedback_text = Column(Text)
     feedback_rating = Column(Integer)
     final_code = Column(String(50), nullable=True)
+    scored_at = Column(DateTime, nullable=True)  # final_score 산출(채팅 종료) 시각
     is_returned = Column(Boolean, nullable=True)
     satisfaction = Column(String(50), nullable=True)
     review = Column(Text, nullable=True)

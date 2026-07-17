@@ -26,6 +26,11 @@ from app.notifications import models as notification_models
 # 서버 시작 시 테이블 생성
 Base.metadata.create_all(bind=engine)
 
+# create_all은 기존 테이블에 새 컬럼을 추가하지 않음 — 신규 컬럼 수동 반영 (idempotent)
+with engine.connect() as _conn:
+    _conn.execute(text("ALTER TABLE user_product ADD COLUMN IF NOT EXISTS scored_at TIMESTAMP"))
+    _conn.commit()
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):

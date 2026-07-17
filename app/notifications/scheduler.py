@@ -99,7 +99,7 @@ def _send_chat_nudge():
                 user_id=up.user_id,
                 title="또바바",
                 body="아직 고민 중이야? 채팅은 12시간 뒤에 자동으로 마무리되니 궁금한 게 있으면 지금 물어봐!",
-                save_to_inbox=True,
+                save_to_inbox=False,
                 notification_type="chat",
                 user_product_id=up.user_product_id,
             )

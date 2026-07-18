@@ -545,7 +545,6 @@ async def send_message(
         end_messages,
         message,
         clean_reply,
-        set(),
     )
     _logger.info(f"[END_DECISION] user_product_id={user_product_id} result={end_decision}")
 

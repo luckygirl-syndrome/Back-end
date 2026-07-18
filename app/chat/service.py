@@ -98,6 +98,20 @@ def _parse_product_info(product_info: List[str]) -> Tuple[str, int, Optional[int
     return product_name, price, discounted_price, discount_rate
 
 
+def _to_int_or_none(value) -> Optional[int]:
+    try:
+        return int(float(value)) if value is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _to_float_or_none(value) -> Optional[float]:
+    try:
+        return float(value) if value is not None else None
+    except (ValueError, TypeError):
+        return None
+
+
 def _extract_scores(confirmed_sentences: List[str]) -> Tuple[int, int]:
     """confirmed_sentences에서 impulse_score, match_score 파싱."""
     for s in confirmed_sentences:
@@ -167,12 +181,18 @@ async def analyze_and_create_session(
     product_name, price, discounted_price, discount_rate = _parse_product_info(result.get("product_info", []))
     impulse_score, match_score = _extract_scores(result.get("confirmed_sentences", []))
 
+    # review 원본값은 Product 컬럼에만 저장 — 챗봇은 confirmed_sentences의 리뷰 문장을 읽으므로 prompt_data에서는 제외
+    review_count = _to_int_or_none(result.pop("review_count", None))
+    review_score = _to_float_or_none(result.pop("review_score", None))
+
     # Product 레코드 생성
     product = Product(
         product_name=product_name,
         price=price,
         discounted_price=discounted_price,
         discount_rate=discount_rate,
+        review_count=review_count,
+        review_score=review_score,
         product_img=json.dumps(image_url_list, ensure_ascii=False),
     )
     db.add(product)

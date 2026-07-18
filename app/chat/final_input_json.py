@@ -864,6 +864,8 @@ def process_scenario(
         ),
         "confirmed_sentences": context_sentences,
         "user_type": build_fbti_summary(user_type),
+        "review_count": result.get('review_count'),
+        "review_score": result.get('review_score'),
     }
 
     # output.json 저장

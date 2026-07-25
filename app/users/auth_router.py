@@ -111,7 +111,7 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "google"})
     is_profile_complete = user.age_group is not None
     is_fbti_complete = user.fbti_type is not None
-    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete, "isFbtiComplete": is_fbti_complete})
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete, "isFbtiComplete": is_fbti_complete, "nickname": user.nickname or ""})
 
 
 @router.post("/auth/kakao", summary="카카오 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
@@ -130,7 +130,7 @@ def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "kakao"})
     is_profile_complete = user.age_group is not None
     is_fbti_complete = user.fbti_type is not None
-    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete, "isFbtiComplete": is_fbti_complete})
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete, "isFbtiComplete": is_fbti_complete, "nickname": user.nickname or ""})
 
 
 @router.post("/auth/apple", summary="애플 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
@@ -148,7 +148,7 @@ def apple_login(body: schemas.AppleLoginRequest, db: Session = Depends(get_db)):
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "apple"})
     is_profile_complete = user.age_group is not None
     is_fbti_complete = user.fbti_type is not None
-    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete, "isFbtiComplete": is_fbti_complete})
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete, "isFbtiComplete": is_fbti_complete, "nickname": user.nickname or ""})
 
 
 @router.post("/auth/refresh", summary="액세스 토큰 재발급", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer"}))

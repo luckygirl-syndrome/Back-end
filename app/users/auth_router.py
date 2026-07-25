@@ -91,7 +91,8 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
         posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in",
                                properties={"provider": "email"})
     is_fbti_complete = user.fbti_type is not None
-    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isFbtiComplete": is_fbti_complete})
+    is_profile_complete = user.age_group is not None
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isFbtiComplete": is_fbti_complete, "isProfileComplete": is_profile_complete})
 
 
 @router.post("/auth/google", summary="구글 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))

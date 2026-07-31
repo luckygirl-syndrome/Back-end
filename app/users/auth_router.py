@@ -154,7 +154,18 @@ def kakao_code_login(body: schemas.KakaoCodeLoginRequest, db: Session = Depends(
     id_token = token_res.json().get("id_token")
     if not id_token:
         raise HTTPException(status_code=401, detail="카카오 토큰 응답에 id_token이 없습니다.")
-    payload = _verify_kakao_token(id_token)
+    # code 플로우의 id_token aud는 REST API 키 — 네이티브 앱 키와 다르므로 별도 검증
+    try:
+        from jose import jwt as jose_jwt, JWTError
+        jwks = httpx.get("https://kauth.kakao.com/.well-known/jwks.json").json()
+        kid = jose_jwt.get_unverified_header(id_token).get("kid")
+        public_key = next((k for k in jwks["keys"] if k["kid"] == kid), None)
+        if not public_key:
+            raise HTTPException(status_code=401, detail="유효하지 않은 카카오 토큰입니다.")
+        payload = jose_jwt.decode(id_token, public_key, algorithms=["RS256"], audience=settings.KAKAO_REST_API_KEY)
+    except JWTError as e:
+        logger.error(f"[카카오 code 로그인 토큰 검증 실패] {e}")
+        raise HTTPException(status_code=401, detail="유효하지 않은 카카오 토큰입니다.")
     info = _extract_social_info("kakao", payload)
     if not info["social_id"]:
         raise HTTPException(status_code=400, detail="카카오 토큰에서 유저 정보를 가져올 수 없습니다.")

@@ -2,9 +2,11 @@ import secrets
 import random
 import logging
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.response import success
 from app.core.observability import posthog_client
@@ -92,7 +94,7 @@ def login(user_data: schemas.UserLogin, db: Session = Depends(get_db)):
                                properties={"provider": "email"})
     is_fbti_complete = user.fbti_type is not None
     is_profile_complete = user.age_group is not None
-    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isFbtiComplete": is_fbti_complete, "isProfileComplete": is_profile_complete})
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isFbtiComplete": is_fbti_complete, "isProfileComplete": is_profile_complete, "nickname": user.nickname or ""})
 
 
 @router.post("/auth/google", summary="구글 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
@@ -118,6 +120,41 @@ def google_login(body: schemas.GoogleLoginRequest, db: Session = Depends(get_db)
 @router.post("/auth/kakao", summary="카카오 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
 def kakao_login(body: schemas.KakaoLoginRequest, db: Session = Depends(get_db)):
     payload = _verify_kakao_token(body.id_token)
+    info = _extract_social_info("kakao", payload)
+    if not info["social_id"]:
+        raise HTTPException(status_code=400, detail="카카오 토큰에서 유저 정보를 가져올 수 없습니다.")
+    user, is_new_user = _social_login_or_signup(db, "kakao", info["social_id"],
+                                                 nickname=info["nickname"], profile_img=info["profile_img"])
+    access_token = create_access_token(data={"sub": str(user.user_id)})
+    refresh_token = create_refresh_token(user.user_id)
+    if is_new_user and posthog_client:
+        posthog_client.capture(distinct_id=str(user.user_id), event="user_signed_up", properties={"provider": "kakao"})
+    if posthog_client:
+        posthog_client.capture(distinct_id=str(user.user_id), event="user_logged_in", properties={"provider": "kakao"})
+    is_profile_complete = user.age_group is not None
+    is_fbti_complete = user.fbti_type is not None
+    return success({"accessToken": access_token, "refreshToken": refresh_token, "tokenType": "bearer", "isNewUser": is_new_user, "isProfileComplete": is_profile_complete, "isFbtiComplete": is_fbti_complete, "nickname": user.nickname or ""})
+
+
+@router.post("/auth/kakao/code", summary="카카오 로그인 (code → token 교환)", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer", "isNewUser": False, "isProfileComplete": True}))
+def kakao_code_login(body: schemas.KakaoCodeLoginRequest, db: Session = Depends(get_db)):
+    token_res = httpx.post(
+        "https://kauth.kakao.com/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "client_id": settings.KAKAO_REST_API_KEY,
+            "client_secret": settings.KAKAO_CLIENT_SECRET,
+            "redirect_uri": body.redirect_uri,
+            "code": body.code,
+        },
+    )
+    if token_res.status_code != 200:
+        logger.error(f"[카카오 code 교환 실패] {token_res.text}")
+        raise HTTPException(status_code=401, detail="카카오 인가 코드 교환에 실패했습니다.")
+    id_token = token_res.json().get("id_token")
+    if not id_token:
+        raise HTTPException(status_code=401, detail="카카오 토큰 응답에 id_token이 없습니다.")
+    payload = _verify_kakao_token(id_token)
     info = _extract_social_info("kakao", payload)
     if not info["social_id"]:
         raise HTTPException(status_code=400, detail="카카오 토큰에서 유저 정보를 가져올 수 없습니다.")

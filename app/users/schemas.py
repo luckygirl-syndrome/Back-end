@@ -53,6 +53,10 @@ class GoogleLoginRequest(BaseModel):
 class KakaoLoginRequest(BaseModel):
     id_token: str
 
+class KakaoCodeLoginRequest(BaseModel):
+    code: str
+    redirect_uri: str
+
 class AppleLoginRequest(BaseModel):
     id_token: str
 

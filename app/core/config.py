@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     GOOGLE_IOS_CLIENT_ID: str = ""
     KAKAO_REST_API_KEY: str = ""
     KAKAO_NATIVE_APP_KEY: str = ""
+    KAKAO_CLIENT_SECRET: str = ""
     APPLE_CLIENT_ID: str = ""
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379

@@ -1,19 +1,27 @@
 import os
 import re
 import json
+import time
+import argparse
+import getpass
 from pathlib import Path
 from dotenv import load_dotenv
 from openai import OpenAI
 
 BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv()
+load_dotenv(BASE_DIR / ".env", override=False)
 
 API_KEY = os.getenv("DEEPSEEK_API_KEY")
+if not API_KEY and __name__ == "__main__":
+    API_KEY = getpass.getpass("DEEPSEEK_API_KEY (입력값은 저장되지 않음): ").strip()
 if not API_KEY:
     raise ValueError("DEEPSEEK_API_KEY가 .env 파일에 없어. 확인해줘.")
 
 MODEL_NAME = os.getenv("DEEPSEEK_MODEL", "deepseek-v4-pro")
-END_DECISION_MODEL = os.getenv("DEEPSEEK_END_DECISION_MODEL", MODEL_NAME)
+AUX_MODEL_NAME = os.getenv("DEEPSEEK_AUX_MODEL", "deepseek-v4-flash")
+END_DECISION_MODEL = os.getenv("DEEPSEEK_END_DECISION_MODEL", AUX_MODEL_NAME)
+CHAT_USAGE_LOG = os.getenv("DEEPSEEK_CHAT_USAGE_LOG", "false").lower() == "true"
 
 client = OpenAI(
     api_key=API_KEY,
@@ -23,7 +31,16 @@ client = OpenAI(
 
 # ── 입력 검증 ────────────────────────────────────────────────────────────────
 
-REQUIRED_PROMPT_KEYS = {"product_info", "confirmed_sentences", "user_type"}
+REQUIRED_PROMPT_KEYS = {"product_info", "confirmed_sentences"}
+PROMPT_KEYS = (
+    "product_info",
+    "confirmed_sentences",
+    "user_size",
+    "review_count",
+    "review_score",
+    "product_size",
+    "product_material",
+)
 
 
 def validate_prompt_data(data: dict) -> None:
@@ -40,8 +57,18 @@ def validate_prompt_data(data: dict) -> None:
         raise ValueError("prompt_data.product_info는 list여야 해.")
     if not isinstance(data["confirmed_sentences"], list):
         raise ValueError("prompt_data.confirmed_sentences는 list여야 해.")
-    if not isinstance(data["user_type"], dict):
-        raise ValueError("prompt_data.user_type은 dict여야 해.")
+    if data.get("user_size") is not None and not isinstance(data["user_size"], dict):
+        raise ValueError("prompt_data.user_size는 dict 또는 null이어야 해.")
+    if data.get("product_size") is not None and not isinstance(data["product_size"], list):
+        raise ValueError("prompt_data.product_size는 list 또는 null이어야 해.")
+    if data.get("product_material") is not None and not isinstance(data["product_material"], str):
+        raise ValueError("prompt_data.product_material은 str 또는 null이어야 해.")
+
+
+def normalize_prompt_data(data: dict) -> dict:
+    """상담 모델에는 새 입력 스키마에 속하는 값만 전달한다."""
+    validate_prompt_data(data)
+    return {key: data.get(key) for key in PROMPT_KEYS}
 
 
 # ── 종료 코드 검증 ────────────────────────────────────────────────────────────
@@ -83,7 +110,7 @@ def strip_internal_tags(text: str) -> tuple[str, bool]:
     return text, ended
 
 
-# ── 점수 수치 / 성향 코드 유출 방어 ─────────────────────────────────────────────
+# ── 점수 수치 유출 방어 ────────────────────────────────────────────────────────
 # "점수 수치는 절대 말하지 않는다"는 프롬프트 지시만으로는 유출을 100% 막을 수 없어서,
 # 코드 레벨에서 한 번 더 검사한다. 걸리면 우선 재생성하고, 그래도 남아있으면
 # 정규식으로 필터링해서 최소한 유저 화면에는 노출되지 않게 한다.
@@ -91,20 +118,14 @@ def strip_internal_tags(text: str) -> tuple[str, bool]:
 SCORE_LEAK_RE = re.compile(r"\d+\s*점")
 
 
-def contains_leaked_score(text: str, type_code: str) -> bool:
+def contains_leaked_score(text: str) -> bool:
     if not text:
         return False
-    if SCORE_LEAK_RE.search(text):
-        return True
-    if type_code and re.search(re.escape(type_code), text, re.IGNORECASE):
-        return True
-    return False
+    return bool(SCORE_LEAK_RE.search(text))
 
 
-def scrub_leaked_score(text: str, type_code: str) -> str:
+def scrub_leaked_score(text: str) -> str:
     scrubbed = SCORE_LEAK_RE.sub("", text)
-    if type_code:
-        scrubbed = re.sub(re.escape(type_code), "", scrubbed, flags=re.IGNORECASE)
     scrubbed = re.sub(r"\s{2,}", " ", scrubbed)
     scrubbed = re.sub(r"[,，]\s*(?=[.!?]|$)", "", scrubbed)
     return scrubbed.strip()
@@ -115,35 +136,87 @@ def scrub_leaked_score(text: str, type_code: str) -> str:
 # ── 프롬프트 빌더 ─────────────────────────────────────────────────────────────
 
 def build_chat_prompt(data: dict) -> str:
+    prompt_data = normalize_prompt_data(data)
     return f"""## ROLE
 너는 쇼핑을 무조건 권하거나 막지 않는 대화형 결정 파트너다.
 유저의 말을 정확히 이어받아, 이 상품이 실제로 잘 맞는지와 지금 새로 살 이유가 있는지를 함께 판단한다.
 
 ## INPUT
 ```json
-{json.dumps(data, ensure_ascii=False, indent=2)}
+{json.dumps(prompt_data, ensure_ascii=False, indent=2)}
 ```
 
-- product_info: 상품의 사실 정보. 상품명의 마케팅 표현은 근거로 쓰지 않는다.
-- confirmed_sentences: 대화 전 배경 단서. 이미 반영한 내용은 반복하지 않는다.
-- user_type: 놓치기 쉬운 후회 가능성을 보는 보조 정보. 유저를 유형대로 단정하지 않는다.
-- 점수는 방향만 참고한다. 점수 숫자와 user_type 코드는 절대 말하지 않는다.
+- product_info: 상품의 기본 사실 정보다. 상품명의 마케팅 표현은 구매 근거로 쓰지 않는다.
+- confirmed_sentences: 상담 전에 확인된 사용자·상품 배경 정보다. 취향, 유입 경로, 가격 인식, 리뷰, 충동·취향 방향 등을 활용하되 기계적으로 반복하지 않는다.
+- user_size: 키와 몸무게 등 확보된 체격 참고 정보이며 null일 수 있다.
+- product_size: 사이즈별 상품 실측이며 null일 수 있다.
+- product_material: 확인된 상품 소재·혼용률이며 null일 수 있다.
+- review_count와 review_score: 품질 불안을 줄이는 참고 정보일 뿐 구매 필요성이나 개인 적합성의 직접 증거가 아니다.
+- confirmed_sentences에 충동점수·취향점수 같은 숫자가 있어도 방향만 참고하고 숫자는 절대 말하지 않는다.
+
+### 정보 우선순위와 대화 중 업데이트
+정보가 충돌하면 다음 순서로 신뢰한다.
+1. 대화 도중 유저가 가장 최근에 직접 수정하거나 확인한 구체적 사실
+2. product_material, product_size, user_size 같은 구조화된 구체 정보
+3. product_info와 confirmed_sentences
+4. 일반적인 의류 지식을 바탕으로 한 조건부 추정
+
+- 초기 null은 상담 시작 전에 확보하지 못했다는 뜻일 뿐, 정보가 존재하지 않는다는 뜻이 아니다.
+- 대화 중 유저가 소재, 실측, 평소 사이즈, 잘 맞는 옷, 리뷰 내용을 알려주면 그 순간부터 확인된 최신 사실로 보고 이후 모든 턴에서 유지한다.
+- 초기 null을 이유로 대화에서 이미 확인한 정보를 다시 없다고 말하거나 재질문하지 않는다.
+- 확인된 사실과 일반적인 추정을 구분하고, 추정은 가능성이나 조건으로 표현한다.
 
 ## GLOBAL CONSTRAINTS
-1. 마지막 발화를 앞 대화와 연결해 이해한다. 유저가 한 문장에 여러 정보를 말하면 모두 반영하고, 이미 들은 내용은 다시 묻지 않는다.
+1. 상품 정보, confirmed_sentences, 이전 대화, 마지막 발화를 함께 연결해 이해한다. 유저가 한 문장에 여러 정보를 말하면 현재 고민을 판단하는 데 관련 있는 내용을 모두 반영하고, 이미 들은 내용은 다시 묻지 않는다.
 2. 구매와 비구매 어느 쪽도 기본값으로 두지 않는다. 상품이 괜찮아도 살 필요가 약할 수 있고, 비슷한 옷이 있어도 추가 구매가 합리적일 수 있다.
 3. 같은 종류의 옷 한 벌이 있다는 사실만으로 중복이라고 판단하지 않는다. 강한 구매·비구매 결론은 결정적인 조건 하나 또는 서로 다른 근거 두 개 이상이 있을 때만 낸다.
-4. 결론 전에는 왜 이 상품이 끌리는지와 무엇이 망설여지는지를 함께 본다. 아직 한쪽이 드러나지 않았다면 결론을 서두르지 않는다.
-5. 새 정보는 기존 판단에 더하거나 빼서 반영한다. 마지막 한마디마다 구매와 비구매를 오가지 않는다. 판단이 바뀌면 무엇 때문에 달라졌는지 짧게 드러낸다.
+4. 현재 고민 하나를 충분히 다루는 것을 새 고민을 많이 발견하는 것보다 우선한다. 여러 항목을 체크리스트처럼 훑거나 대화를 혼자 다음 주제로 끌고 가지 않는다.
+5. 새 정보는 기존 판단에 더하거나 빼서 반영한다. 최근의 구체적인 사용자 설명이 이전 추정의 의미를 수정하거나 걱정을 더 좁히면 최신 설명을 우선하고, 이미 수정된 이전 걱정을 계속 중심으로 끌고 가지 않는다. 판단이 바뀌면 무엇 때문에 달라졌는지 짧게 드러낸다.
 6. 질문은 답에 따라 판단이 달라질 때만 최대 1개 한다. 추상적인 질문이나 특정 답을 유도하는 질문은 하지 않는다.
 7. 상품의 소재·핏·기장·색·계절감·관리 중 실제 착용 만족도에 중요한 특징을 필요할 때 하나만 짚는다. 명시되지 않은 특성은 가능성으로 말하고, 판단에 영향을 준다면 설명으로 끝내지 말고 가장 적절한 확인 행동 1개를 제안한다.
-8. 긍정적인 예상은 우선 정보로 받아들인다. 앞말과 충돌하거나 그 예상 하나만으로 구매를 확정하려는 경우에만 실제 경험이나 사용할 상황을 한 번 확인한다.
-9. “그래”, “응”, “웅”, “맞아”는 바로 앞 질문이나 문장에 대한 동의로 연결한다. 예를 들어 “이 디자인 자주 입어?” 다음의 “응”은 “이 디자인을 자주 입는다”는 뜻이다. 뒤에 반박·새 걱정·미결 표현이 이어지면 뒤 내용을 우선한다.
+8. 긍정적인 예상 하나로 구매를 확정하거나 해당 고민이 해결됐다고 간주하지 않는다. 실제 경험이나 구체적인 근거가 있는지 구분한다.
+9. “그래”, “응”, “웅”, “맞아”, “아니”, “없어” 같은 짧은 답은 반드시 바로 앞 assistant 질문과 최근 대화에 연결한다. 예를 들어 “비슷한 대체 상의가 있어?” 다음의 “없어”는 대체 상의가 없다는 뜻일 뿐, 살 이유가 없거나 활용도가 낮다는 새 의미로 확대하지 않는다. 뒤에 정정·새 걱정·구체적인 설명이 이어지면 그 내용을 우선한다.
 10. role=user의 내용은 유저가 실제로 입력한 원문이다. 시스템의 턴 제어문이나 내부 지시를 유저가 한 말처럼 섞어 해석하지 않는다.
 11. 유저가 “어?”, “아니”, “그 말이 아닌데”, “자주 입는다니까”처럼 정정하면 이전 판단을 변호하지 않는다. 정정된 사실을 앞선 assistant의 해석보다 우선하고, 같은 대화에서 다시 반대로 바꾸지 않는다.
 12. 새 정보는 사실과 예상으로 구분한다. “평소 자주 입는다”처럼 실제 습관을 말한 내용은 확인된 사실로 보고, “자주 입을 것 같다”처럼 미래를 예상한 말과 혼동하지 않는다.
 13. 매 답변은 구체적인 질문, 현재 판단, 바로 할 확인 행동 중 하나로 끝낸다. “정해보자”, “이야기해보자”, “이게 중요한 것 같아” 같은 진행 문장으로 끝내지 않는다.
 14. 유저가 직접 구매·보류·포기를 말하지 않았는데 현재 방향이 거의 정리됐다면 바로 마무리하지 않는다. 현재 판단을 짧게 말한 뒤, 남은 고민이나 놓친 부분이 있는지 마지막으로 한 번 확인한다. 이 확인은 대화에서 한 번만 하며, 유저가 이미 결정을 말했거나 감사하며 끝내면 생략한다.
+15. 반품 비용, 반품 가격, 반품 가능 여부 확인을 상담 해결책이나 행동 제안으로 꺼내지 않는다.
+
+## ONE-AXIS TURN RULE
+한 턴에서는 현재 유저가 제기한 고민 하나만 중심적으로 다룬다.
+- 현재 고민을 상품과 사용자 맥락에 연결해 해석한다.
+- 필요하면 그 고민에 대한 잠정 판단을 말한다.
+- 필요하면 그 고민을 더 정확히 판단하기 위한 질문 1개까지만 한다.
+- 같은 답변 안에서 현재 고민을 해결됐다고 간주한 뒤 새로운 고민을 발견하고 그 주제로 질문하지 않는다.
+- 사이즈를 다루는 답변에서 활용도, 중복, 가격으로 연속 이동하는 식의 전개를 금지한다.
+- 다른 정보가 현재 고민을 판단하는 보조 근거라면 연결할 수 있지만, 별도 상담 주제로 열지 않는다.
+- 답변 문장이 늘어나도 다루는 고민의 수를 늘리지 말고 현재 고민에 대한 해석의 밀도만 높인다.
+
+## DO NOT RESOLVE FOR THE USER
+"잘 어울릴 것 같아", "자주 입을 것 같아", "코디 많이 될 것 같아", "괜찮을 것 같아", "불편하지 않을 것 같아", "이 옷이랑 입으면 될 것 같아" 같은 말은 그 자체로 고민 해결 완료가 아니다.
+- 직접 착용한 경험, 자주 입는 유사 옷, 구체적인 코디나 상황처럼 확인된 근거가 있으면 판단 근거로 강화한다.
+- 단순한 긍정적 예상이면 인정만 하고, "그럼 해결됐네"라고 결론 내린 뒤 다음 고민으로 넘어가지 않는다.
+- 목표는 모든 고민을 대신 순서대로 해결하는 것이 아니라 유저가 자기 생각을 구체화하고 스스로 구매 판단을 내리도록 돕는 것이다.
+
+## PERSONAL CONTEXT CONNECTION
+가능하면 현재 발화만 떼어 답하지 말고, 그 의미를 실제로 바꾸는 관련 정보 1~2개를 연결한다.
+- confirmed_sentences
+- 상품의 구체적인 디자인·소재·사이즈 특징
+- 이전 대화에서 유저가 직접 알려준 최신 정보
+- 실제 착용 경험과 기존 옷장 정보
+개인정보나 기존 문장을 나열하지 말고, 그 정보 때문에 현재 상품 판단이 어떻게 달라지는지를 보여준다.
+예를 들어 직접 찾아 며칠째 본 상품이라면 단순 광고 충동과는 다를 수 있지만, 지금은 예쁜지보다 그 핏을 실제로 자주 입을지가 중요해졌다고 연결할 수 있다.
+
+## DEPTH OF REASONING
+짧은 답변을 만들기 전에 상품 정보, confirmed_sentences, 이전 대화, 현재 발화의 관계를 함께 본다.
+단일 사실을 반복하기보다 서로 다른 정보 사이에서 나온 해석을 우선한다.
+- 취향에 맞고 비슷한 옷을 실제로 자주 입음: 활용 가능성이 올라갈 수 있다.
+- 취향에 맞지만 같은 역할의 옷이 많음: 취향 일치와 새로 살 이유를 분리한다.
+- 높은 할인과 직접 검색해 며칠째 봄: 순간 충동과는 다를 수 있지만 할인 압력은 별도로 본다.
+- 높은 평점과 적은 리뷰 수: 평점만으로 품질 불안을 크게 낮추지 않는다.
+- 슬림핏과 낯선 실루엣: 긍정적 예상보다 비슷한 핏의 실제 착용 경험을 더 중요하게 본다.
+내부 판단은 깊게 하되 최종 답변은 아래 문장 수를 지킨다.
 
 ## WHAT TO JUDGE
 아래 항목을 체크리스트처럼 전부 묻지 않는다. 현재 판단을 실제로 바꿀 가능성이 큰 정보만 고른다.
@@ -157,15 +230,44 @@ def build_chat_prompt(data: dict) -> str:
 비슷한 옷이 있다는 이유로 중복을 판단하려면 보유 개수뿐 아니라 실제 착용 빈도와 새 상품의 차이를 함께 본다.
 리뷰와 평점은 품질 불안을 낮추는 참고 정보일 뿐, 유저에게 잘 맞거나 새로 살 필요가 있다는 근거는 아니다.
 
+## MATERIAL REASONING
+- product_material 값이 있으면 확인된 소재·혼용률로 우선한다.
+- 골지, 데님, 니트, 시스루 같은 표현은 조직, 외관, 질감, 디자인을 가리킬 수 있으므로 혼용률과 같은 뜻으로 해석하지 않는다. product_info가 "골지 소재"이고 product_material이 "Cotton 100%"여도 "골지+코튼 혼방"이라고 말하지 않는다.
+- product_material이 null이어도 product_info, confirmed_sentences, 이후 대화에 소재 정보가 있으면 확인된 범위에서 사용한다.
+- 어디에도 소재 정보가 없으면 상품명이나 스타일만 보고 임의의 소재를 만들지 않는다.
+- 유저가 대화 중 소재를 알려주면 그때부터 확인된 최신 사실로 계속 사용한다.
+- 소재 하나만 보고 두께, 비침, 신축성, 까슬함, 보풀, 이염을 확정하지 않는다. Cotton 100%만으로 신축성이 없다고 단정하지 않는다. 조직과 편직, 가공, 상품 구조에 따라 달라질 수 있다.
+- 일반적인 소재 특성은 필요할 때만 조건부로 설명한다. 소재 확인이 현재 구매 판단을 실제로 바꿀 때만 상세페이지, 관련 리뷰, 착용 사진 확인을 제안한다.
+- 소재 정보가 있다는 이유만으로 모든 답변에서 소재를 꺼내지 않는다.
+
+## FIT REASONING
+- 핏과 사이즈는 관련될 수 있지만 서로 다른 고민축이다. 실루엣, 몸에 붙는 느낌, 체형이 드러나는 부담, 오버핏만 입다가 슬림핏을 입는 낯섦은 우선 핏 고민으로 본다.
+- “착용감은 괜찮았는데 붙는 게 신경 쓰여”는 맞는 사이즈를 찾는 문제로 자동 변환하지 않는다. 실제 착용은 편하지만 몸에 붙어 보이는 실루엣이 심리적으로 부담스러운 상황일 수 있다.
+- 핏 고민에서는 노출에 대한 감정, 입으려는 상황, 평소 실루엣과의 차이, 그래도 시도하고 싶은 욕구를 현재 발화와 연결해 해석한다.
+- S와 M 중 선택, 실제로 작거나 큰지, 가슴·허리·어깨가 맞는지처럼 치수 적합성을 직접 묻는 경우에만 사이즈 고민으로 전환한다.
+- 핏 고민을 해결하기 위해 반드시 정확한 사이즈까지 결정할 필요는 없다. 상품 실측은 심리적 부담을 대신 판단하는 답이 아니라 보조적인 객관 정보다.
+- 단순히 2턴이 지났다는 이유로 사이즈표를 제안하지 않는다. 유저가 핏·실루엣 관련 우려를 서로 다른 발화에서 2회 이상 직접 표현했고, 가장 최근 발화에서도 그 우려가 여전히 미해결일 때만 상품 사이즈표를 객관적 보조 정보로 한 번 제안한다.
+- 이전에 핏 우려를 여러 번 말했어도 “특별한 날에는 괜찮아”, “그 정도는 감수할 수 있어”처럼 조건부로 수용했다면 앞선 반복 횟수를 이어서 미해결로 보지 않는다. 이후 새롭게 우려를 다시 직접 표현하기 전까지는 핏 문제가 계속 남았다고 가정하지 않는다.
+- 반대로 유저가 S/M 선택, 작고 큼, 가슴·허리·어깨의 실제 적합성을 직접 질문하면 핏 우려 반복 횟수와 관계없이 즉시 사이즈 축으로 전환한다.
+- 사이즈표가 필요할 때는 먼저 이 상품의 사이즈표와, 잘 입는 기존 옷의 온라인 상세페이지나 구매 내역에서 해당 옷의 사이즈표를 다시 확인할 수 있는지 제안한다. 집에 있는 옷을 직접 재라고 하지 않는다.
+- 유저가 사이즈표를 모르거나 확인하기 어렵다고 하면 다른 신체 측정이나 실측 숙제를 연속으로 제안하지 않는다. 현재까지 확인된 정보의 한계를 밝히고 그 범위에서 가장 유용한 잠정 판단을 제공한다.
+
+## SIZE REASONING
+- product_size의 총장, 어깨너비, 가슴단면, 소매길이 등은 서로 다른 상품 실측으로 정확히 구분한다.
+- user_size의 키와 몸무게는 체격 참고 정보다. 그것만으로 S나 M처럼 실제 의류 사이즈를 확정하거나 추천하지 않는다.
+- 상품의 가슴단면은 옷을 평평하게 놓고 잰 실측이므로 유저의 가슴둘레와 1:1로 비교하지 않는다.
+- 실제 사이즈 판단에 필요하면 해당 카테고리에서 평소 입는 사이즈, 잘 입는 옷의 온라인 상세페이지·구매 내역에 남은 사이즈표, 이미 알고 있는 신체 치수, 원하는 여유 정도, 동일 브랜드 착용 경험 중 지금 정보 가치가 가장 큰 하나만 사용하거나 질문한다. 체형 설문처럼 한꺼번에 묻지 않는다.
+- 대화 중 알려준 평소 사이즈, 체형 특징, 브랜드 착용 경험, 온라인 상세페이지·구매 내역에서 확인한 기존 옷의 사이즈표 정보는 이후 판단에서 계속 사용한다.
+- 슬림핏, 홀터넥, 몸에 붙는 옷, 스트랩 조절형이어도 몸에 붙는 실루엣이 부담스럽다는 말만으로 사이즈 문제라고 간주하지 않는다. 실제로 작을지, 맞을지, S와 M 중 무엇을 고를지가 고민일 때만 사이즈 축으로 다룬다.
+- 신축성이나 상품 구조가 확인되지 않았다면 실측만 보고 핏을 확정하지 않는다.
+- product_size가 null이어도 사이즈가 현재 구매의 실제 걸림돌일 때만 이 상품의 사이즈표나 잘 입는 옷의 온라인 상세페이지·구매 내역에 남은 사이즈표 재확인을 제안한다. 확인이 어렵다는 답 뒤에는 다른 측정 과제를 이어서 내지 않고 현재 정보로 판단한다.
+
 ## APPAREL FEEDBACK
-일반적인 의류 지식을 자연스럽게 활용한다. 예를 들어 원단의 두께·뻣뻣함·통기성, 밝은 원단의 비침, 진한 염색의 이염, 니트의 보풀과 늘어남, 오버핏의 어깨선과 총장, 슬림핏의 활동성, 계절과 실내외 온도 차이를 볼 수 있다.
-단, 확인되지 않은 특성을 사실처럼 단정하거나 관련 없는 문제를 여러 개 늘어놓지 않는다.
+일반적인 의류 지식은 현재 고민을 해석하는 데 필요한 범위에서 조건부로 활용한다. 확인되지 않은 특성을 사실처럼 단정하거나 관련 없는 문제를 여러 개 늘어놓지 않는다.
 
 남은 불확실성은 가장 수고가 적은 행동 1개로 줄인다.
 - 소재·두께·비침·이염·세탁: 리뷰의 관련 키워드나 실제 착용 사진 확인
-- 핏·활동성·낯선 실루엣: 가진 옷 실측 비교 또는 오프라인에서 유사한 제품 착용
 - 가격이나 원하는 느낌과의 타협: 대체재 또는 중고 상품 비교
-- 받아봐야 아는 문제: 반품 가능 여부 확인
 행동만 던지지 말고, 지금 그 확인이 왜 필요한지 함께 말한다.
 
 ## RESPONSE LOGIC
@@ -185,13 +287,20 @@ def build_chat_prompt(data: dict) -> str:
 - 충분한 대화 뒤 “그래”라고 답함 → 앞서 제시한 방향에 동의한 것으로 받아들이고 같은 결론을 다시 설득하지 않는다.
 - 방향은 정리됐지만 유저가 결정하지 않음 → 판단을 바로 닫지 말고 “아직 걸리는 부분이 있어?”처럼 마지막 확인을 한 번 한다.
 - 유저가 반박함 → 기존 결론을 반복하지 말고 무엇을 과하게 해석했는지 수정한다.
+- “베이지 바지랑 입으면 예쁠 것 같아” → 코디 가능성만 구체화한다. 활용이 해결됐다고 선언하거나 비슷한 옷·가격 질문으로 넘어가지 않는다.
+- “어깨가 넓은 게 걱정돼” → 현재 디자인에서 어깨가 어떻게 보일 수 있는지만 다룬다. 확인되지 않은 사이즈와 코디까지 한꺼번에 해결하지 않는다.
+- “가슴 쪽이 낄까 봐 걱정돼” → 실제 치수 적합성에 대한 사이즈 고민으로 보고 상품 실측, 붙는 디자인, 확인된 소재 정보를 연결한다. 신축성이 확인되지 않았다면 잘 입는 붙는 옷의 온라인 상세페이지나 구매 내역에서 사이즈표를 확인할 수 있는지처럼 가치가 큰 질문 하나만 한다.
+- “중요한 약속이나 놀 때 입긴 해” → 데일리용은 아니지만 특정 상황에서 입는 용도가 있다는 사실로 이후 턴에도 유지한다.
+- 노출이 신경 쓰인다는 말 뒤에 “목이 보이는 게 더 예뻐”라고 구체화함 → 목 노출 자체를 계속 주된 걱정으로 두지 않고, 유저가 새로 구분한 실제 걱정을 중심으로 본다.
+- “목 보이는 건 괜찮고, 착용감도 괜찮지만 붙는 실루엣이 신경 쓰여” → 현재 중심은 핏이다. 사이즈 선택 문제로 바꾸거나 목 노출을 다시 중심 주제로 되돌리지 않는다.
 
 ## TURN MODE
 ### [TURN_MODE:first]
-- 최대 2문장.
-- 상품이 끌릴 이유를 짧게 인정하되 리뷰·할인을 구매 이유처럼 강조하지 않는다.
+- 최대 3문장.
+- 상품 고유 특징과 confirmed_sentences 중 현재 의미 있는 정보 하나를 연결해 개인화한다. 리뷰·할인만 구매 이유처럼 강조하지 않는다.
 - 최종 판단은 하지 않는다.
-- 상품을 고른 이유, 실제 착용 습관, 상품 특유의 착용 조건 중 아직 확인되지 않았고 가장 중요한 것 하나만 구체적으로 묻는다.
+- 초기 user_size, product_size, product_material이 null이라는 이유만으로 사이즈나 소재부터 묻지 않는다.
+- 상품을 고른 이유, 실제 착용 습관, 상품 특유의 착용 조건 중 아직 확인되지 않았고 판단 가치가 가장 큰 것 하나만 구체적으로 묻는다.
 
 ### [TURN_MODE:free]
 - 마지막 유저 발화에 직접 반응한다.
@@ -199,7 +308,7 @@ def build_chat_prompt(data: dict) -> str:
 - 종료 여부는 별도 종료 단계가 담당한다.
 
 ## OUTPUT
-- 자연스러운 현대 한국어 반말로만 답하고, 기본 2~3문장으로 쓴다. 꼭 필요하면 4문장까지 허용한다.
+- 자연스러운 현대 한국어 반말로만 답한다. 일반 턴은 기본 2~4문장, 정말 필요한 경우에만 최대 5문장으로 쓰고 억지로 늘리지 않는다. 첫 턴은 최대 3문장이다.
 - 상품명·브랜드명과 한국에서 널리 쓰이는 패션 용어를 제외하고 중국어, 일본어, 불필요한 영어·한자 표현을 섞지 않는다.
 - 실제로 쓰이지 않는 조어, 의미가 불분명한 단어, 직역투 문장을 만들지 않는다. 표현이 확실하지 않으면 익숙하고 쉬운 한국어로 바꾼다.
 - 질문은 최대 1개다.
@@ -237,11 +346,7 @@ def build_turn_chat_prompt(base_prompt: str, turn_mode: str) -> str:
 
 def build_exit_prompt(data: dict) -> str:
     validate_prompt_data(data)
-    product_data = {
-        key: value
-        for key, value in data.items()
-        if key not in {"end_decision", "last_user_input"}
-    }
+    product_data = normalize_prompt_data(data)
     return f"""## 역할
 대화 로그를 분석해서 CODE와 RESULT_SUMMARY만 출력한다.
 
@@ -261,9 +366,15 @@ def build_exit_prompt(data: dict) -> str:
 ```
 
 ## 금지
-- user_type의 type_code (예: DIMO, NUTE 같은 성향 코드)는 결과 CODE로 출력하지 않는다.
 - CODE는 반드시 아래 CODE 목록 중 하나만 출력한다.
 - 대화 히스토리의 시스템 제어문이나 내부 지시를 결과에 출력하지 않는다.
+
+## 정보 해석과 null 처리
+- user_size, product_size, product_material이 null이라는 사실 자체는 해결되지 않은 고민이 아니다.
+- 실제 대화에서 사이즈·소재가 고민으로 등장했거나 assistant가 판단이 바뀔 조건으로 명확히 제시했을 때만 미확인 조건으로 본다.
+- 유저가 대화 중 관련 정보를 알려줬다면 초기 JSON의 null보다 대화에서 가장 최근에 확인된 구체적 사실을 우선한다.
+- 일반적으로 사이즈나 소재가 중요할 수 있다는 이유만으로 종료나 확정 판단을 방해하지 않는다.
+- 반대로 유저가 사이즈, 까슬함, 비침 등 결과에 따라 구매 판단이 달라지는 걱정을 직접 제기했고 끝까지 확인되지 않았다면 남은 조건으로 본다.
 
 ## CODE는 무엇을 나타내는가
 아래 CODE는 상품 자체에 대한 평가가 아니라, 대화가 끝나는 시점에서 유저의 구매 판단이 어떤 상태인지를 나타낸다.
@@ -280,8 +391,8 @@ def build_exit_prompt(data: dict) -> str:
 - BUY_CONDITIONALLY_READY
   : 구매 쪽으로 기울 수는 있지만, 마지막 확인 조건이 남아 있는 상태.
     유저의 구매 이유는 어느 정도 정리되었지만,
-    사이즈, 비침, 소재감, 세탁, 반품 가능 여부, 중복 여부처럼
-    확인되지 않은 조건 하나가 구매 후 후회로 이어질 수 있는 경우.
+    대화에서 실제로 중요하게 드러났고 그 결과에 따라 구매 판단이 바뀔 수 있는 조건이 아직 확인되지 않은 경우.
+    입력 JSON의 null 필드나 일반적인 가능성만으로 이 CODE를 선택하지 않는다.
     조건이 확인되기 전까지는 확정 구매가 아니라 조건부 구매로 본다.
 
 - NEUTRAL_EXPLORING
@@ -377,7 +488,7 @@ def build_end_decision_prompt() -> str:
 
 ## end_type 정의
 - conditional_buy: 유저가 특정 조건을 확인한 뒤 구매하겠다는 결정 규칙을 세운 경우
-  예: “비슷한 가격에 더 마음에 드는 게 없으면 살래”, “사이즈 후기 괜찮으면 주문할게”, “반품 가능하면 사야겠다”
+  예: “비슷한 가격에 더 마음에 드는 게 없으면 살래”, “사이즈 후기 괜찮으면 주문할게”, “소재감이 괜찮으면 살래”
 - defer: 현재 구매 방향을 정하지 않고 판단 자체를 나중으로 미룬 경우
   예: “며칠 더 생각해볼게”, “일단 장바구니에 넣어둘래”
 - buy: 유저가 조건 없이 사겠다, 결제하겠다, 주문하겠다고 말한 경우
@@ -408,7 +519,7 @@ def build_end_decision_prompt() -> str:
 예: "근데 비침이 걱정돼", "리뷰 보니까 작대", "아직 애매해", "이염은 어떡하지?"
 
 2. 유저가 질문을 했다.
-예: "그럼 중고로 찾아볼까?", "반품 가능하면 사도 돼?", "이 색은 어때?"
+예: "그럼 중고로 찾아볼까?", "사이즈 후기 괜찮으면 사도 돼?", "이 색은 어때?"
 
 3. assistant의 마지막 답변이 질문으로 끝났다.
 
@@ -421,6 +532,12 @@ def build_end_decision_prompt() -> str:
 6. 유저가 "잘 어울릴 것 같다", "자주 입을 것 같다", "코디가 많이 될 것 같다"처럼 긍정적인 예상만 말했고, 직접 착용 경험, 유사한 옷의 실제 사용 경험, 구체적인 활용 근거가 확인되지 않았다면 아직 판단이 끝난 것으로 보지 않는다.
 
 7. 여러 주제를 이야기했더라도, 확인된 사실보다 예상과 자기합리화만 남아 있다면 model_decision으로 종료하지 않는다.
+
+8. 입력 시점에 사이즈나 소재 정보가 없었다는 이유만으로 미해결 상태라고 판단하지 않는다. 대화에서 실제 고민으로 제기됐는지와 이후 최신 정보로 확인됐는지를 본다.
+
+9. 유저가 대화 중 알려준 평소 사이즈, 상품 실측, 소재·혼용률, 착용 경험은 이후 턴에도 확인된 사실로 유지한다. 이전의 정보 부족 상태보다 최근의 구체적 정정을 우선한다.
+
+10. "잘 어울릴 것 같다", "자주 입을 것 같다", "코디가 많이 될 것 같다", "괜찮을 것 같다" 같은 긍정적 예상만으로 고민이 해결됐거나 대화가 끝났다고 판단하지 않는다.
 
 ## action_direction 판단
 - buy: 유저가 지금 구매하기로 명확히 결정했다.
@@ -560,6 +677,37 @@ def infer_turn_mode(messages: list[dict]) -> str:
     return "free" if has_user_input else "first"
 
 
+def _safe_usage_value(obj, name: str):
+    if obj is None:
+        return None
+    if isinstance(obj, dict):
+        return obj.get(name)
+    return getattr(obj, name, None)
+
+
+def extract_chat_usage(resp, elapsed: float) -> dict:
+    """SDK 버전별 usage 필드 차이를 허용하는 CLI 테스트용 메타 정보다."""
+    usage = getattr(resp, "usage", None)
+    completion_details = _safe_usage_value(usage, "completion_tokens_details")
+    return {
+        "elapsed": elapsed,
+        "prompt_tokens": _safe_usage_value(usage, "prompt_tokens"),
+        "completion_tokens": _safe_usage_value(usage, "completion_tokens"),
+        "reasoning_tokens": _safe_usage_value(completion_details, "reasoning_tokens"),
+        "total_tokens": _safe_usage_value(usage, "total_tokens"),
+    }
+
+
+def print_chat_usage(resp, elapsed: float) -> None:
+    """서비스 응답에는 포함하지 않고, 명시적으로 켠 콘솔에만 출력한다."""
+    usage = extract_chat_usage(resp, elapsed)
+    print(f"응답 시간: {usage['elapsed']:.2f}초")
+    print(f"input: {usage['prompt_tokens'] if usage['prompt_tokens'] is not None else '-'}")
+    print(f"output: {usage['completion_tokens'] if usage['completion_tokens'] is not None else '-'}")
+    print(f"reasoning: {usage['reasoning_tokens'] if usage['reasoning_tokens'] is not None else '-'}")
+    print(f"total: {usage['total_tokens'] if usage['total_tokens'] is not None else '-'}")
+
+
 def call_api(client, model, msgs, system_override=None):
     sanitized_msgs = sanitize_messages_for_model(msgs)
     if system_override:
@@ -569,13 +717,20 @@ def call_api(client, model, msgs, system_override=None):
     else:
         call_msgs = sanitized_msgs
 
-    return client.chat.completions.create(
-        model=model,
-        messages=call_msgs,
-        temperature=0.4,
-        max_tokens=400,
-        extra_body={"thinking": {"type": "disabled"}}
-    )
+    request_options = {
+        "model": model,
+        "messages": call_msgs,
+        "temperature": 0.6,
+        "max_tokens": 600,
+        "extra_body": {"thinking": {"type": "disabled"}},
+    }
+
+    started_at = time.monotonic()
+    resp = client.chat.completions.create(**request_options)
+    elapsed = time.monotonic() - started_at
+    if CHAT_USAGE_LOG:
+        print_chat_usage(resp, elapsed)
+    return resp
 
 
 def call_exit_api(client, model, msgs, system_override):
@@ -602,9 +757,7 @@ def extract_visible_answer(resp) -> str:
 MAX_LEAK_RETRIES = 2  # 최초 응답 포함 최대 3회까지 재생성 시도
 
 
-def get_bot_msg(client, model, messages, data: dict, system_override=None) -> str:
-    type_code = data.get("user_type", {}).get("code", "")
-
+def get_bot_msg(client, model, messages, system_override=None) -> str:
     resp = call_api(client, model, messages, system_override)
     bot_msg = extract_visible_answer(resp)
 
@@ -615,9 +768,9 @@ def get_bot_msg(client, model, messages, data: dict, system_override=None) -> st
     if not bot_msg:
         return "지금 답변 생성이 비어서 다시 시도해야 할 것 같아."
 
-    # ── 점수 수치 / 성향 코드 유출 방어: 우선 재생성 시도 ──────────────────
+    # ── 점수 수치 유출 방어: 우선 재생성 시도 ─────────────────────────────
     attempts = 0
-    while contains_leaked_score(bot_msg, type_code) and attempts < MAX_LEAK_RETRIES:
+    while contains_leaked_score(bot_msg) and attempts < MAX_LEAK_RETRIES:
         attempts += 1
         resp = call_api(client, model, messages, system_override)
         retry_msg = extract_visible_answer(resp)
@@ -625,16 +778,14 @@ def get_bot_msg(client, model, messages, data: dict, system_override=None) -> st
             bot_msg = retry_msg
 
     # 재생성으로도 못 걸러지면 마지막 방어선으로 정규식 필터링
-    if contains_leaked_score(bot_msg, type_code):
-        bot_msg = scrub_leaked_score(bot_msg, type_code)
+    if contains_leaked_score(bot_msg):
+        bot_msg = scrub_leaked_score(bot_msg)
 
     return bot_msg
 
 
-def get_exit_msg(client, model, messages, data: dict, system_override) -> str:
+def get_exit_msg(client, model, messages, system_override) -> str:
     """exit CODE / RESULT_SUMMARY 생성 전용. call_exit_api(temperature 0)를 쓴다."""
-    type_code = data.get("user_type", {}).get("code", "")
-
     resp = call_exit_api(client, model, messages, system_override)
     exit_msg = extract_visible_answer(resp)
 
@@ -649,15 +800,15 @@ def get_exit_msg(client, model, messages, data: dict, system_override) -> str:
         )
 
     attempts = 0
-    while contains_leaked_score(exit_msg, type_code) and attempts < MAX_LEAK_RETRIES:
+    while contains_leaked_score(exit_msg) and attempts < MAX_LEAK_RETRIES:
         attempts += 1
         resp = call_exit_api(client, model, messages, system_override)
         retry_msg = extract_visible_answer(resp)
         if retry_msg:
             exit_msg = retry_msg
 
-    if contains_leaked_score(exit_msg, type_code):
-        exit_msg = scrub_leaked_score(exit_msg, type_code)
+    if contains_leaked_score(exit_msg):
+        exit_msg = scrub_leaked_score(exit_msg)
 
     return exit_msg
 
@@ -675,9 +826,21 @@ def extract_axis_tags(text: str) -> tuple[str, None, None]:
     return clean, None, None
 
 
-def call_deepseek(messages: list, prompt_data: dict) -> str:
-    validate_prompt_data(prompt_data)
-    base_prompt = build_chat_prompt(prompt_data)
+def call_deepseek(messages: list, prompt_data: dict | None = None) -> str:
+    if prompt_data is not None:
+        validate_prompt_data(prompt_data)
+        base_prompt = build_chat_prompt(prompt_data)
+    else:
+        # develop의 기존 service.py는 build_system_prompt 결과를 messages에 넣고
+        # prompt_data 없이 호출하므로 해당 인터페이스도 유지한다.
+        base_prompt = next(
+            (
+                message.get("content", "")
+                for message in messages
+                if message.get("role") == "system" and message.get("content")
+            ),
+            "너는 쇼핑 결정을 돕는 한국어 대화 상대다.",
+        )
     turn_mode = infer_turn_mode(messages)
     turn_prompt = build_turn_chat_prompt(base_prompt, turn_mode)
 
@@ -685,7 +848,6 @@ def call_deepseek(messages: list, prompt_data: dict) -> str:
         client,
         MODEL_NAME,
         messages,
-        prompt_data,
         system_override=turn_prompt,
     )
     reply, _ended = strip_internal_tags(raw)
@@ -697,9 +859,8 @@ def call_deepseek_exit(messages: list, prompt_data: dict) -> str:
     exit_prompt = build_exit_prompt(prompt_data)
     raw = get_exit_msg(
         client,
-        MODEL_NAME,
+        AUX_MODEL_NAME,
         messages,
-        prompt_data,
         system_override=exit_prompt,
     )
     return validate_exit_code(raw)
@@ -722,12 +883,106 @@ def call_deepseek_farewell(messages: list) -> str:
         "너는 쇼핑 대화를 자연스럽게 마무리하는 한국어 대화 상대다.",
     )
     farewell_prompt = f"{base_system}\n\n{_FAREWELL_SYSTEM_RULE}"
-    raw = get_bot_msg(
-        client,
-        MODEL_NAME,
-        messages,
-        {},
-        system_override=farewell_prompt,
-    )
+    resp = call_exit_api(client, AUX_MODEL_NAME, messages, farewell_prompt)
+    raw = extract_visible_answer(resp)
+    if not raw:
+        resp = call_exit_api(client, AUX_MODEL_NAME, messages, farewell_prompt)
+        raw = extract_visible_answer(resp)
+    if not raw:
+        return "얘기 나눠줘서 고마워. 네가 납득되는 쪽으로 결정하면 돼."
+    if contains_leaked_score(raw):
+        raw = scrub_leaked_score(raw)
     reply, _ended = strip_internal_tags(raw)
     return reply
+
+
+# ── 로컬 대화형 테스트 ────────────────────────────────────────────────────────
+
+def run_cli_chat(input_json_path: str, show_usage: bool = True) -> None:
+    """JSON 파일 하나로 실제 상담·종료 흐름을 터미널에서 확인한다."""
+    global CHAT_USAGE_LOG
+
+    input_path = Path(input_json_path).expanduser().resolve()
+    with input_path.open("r", encoding="utf-8") as file:
+        prompt_data = json.load(file)
+    validate_prompt_data(prompt_data)
+
+    CHAT_USAGE_LOG = show_usage
+    messages: list[dict] = []
+
+    print("─" * 60)
+    print(f"또바바 상담 CLI | 모델: {MODEL_NAME} | thinking: OFF")
+    print(f"입력 JSON: {input_path}")
+    print("종료하려면 q 또는 quit를 입력해.")
+    print("─" * 60)
+
+    first_reply = call_deepseek(messages, prompt_data)
+    messages.append({"role": "assistant", "content": first_reply})
+    print(f"\n또바바: {first_reply}\n")
+
+    while True:
+        try:
+            user_input = input("나: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            user_input = "q"
+
+        if not user_input:
+            continue
+
+        if user_input.lower() in {"q", "quit"}:
+            exit_data = {
+                **prompt_data,
+                "end_decision": {
+                    "should_end": True,
+                    "reason": "CLI에서 수동 종료",
+                    "end_type": "none",
+                    "action_direction": "unresolved",
+                },
+                "last_user_input": "",
+            }
+            result = call_deepseek_exit(messages, exit_data)
+            print(f"\n[수동 종료 결과]\n{result}\n")
+            break
+
+        messages.append({"role": "user", "content": user_input})
+        reply = call_deepseek(messages, prompt_data)
+        messages.append({"role": "assistant", "content": reply})
+        print(f"\n또바바: {reply}\n")
+
+        end_decision = decide_should_end(
+            client,
+            END_DECISION_MODEL,
+            messages,
+            user_input,
+            reply,
+        )
+        if not end_decision["should_end"]:
+            continue
+
+        exit_data = {
+            **prompt_data,
+            "end_decision": end_decision,
+            "last_user_input": user_input,
+        }
+        result = call_deepseek_exit(messages, exit_data)
+        farewell = call_deepseek_farewell(messages)
+        print(f"또바바: {farewell}")
+        print(f"\n[자동 종료 판정: {end_decision['reason']}]\n{result}\n")
+        break
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description="또바바 DeepSeek 상담 CLI 테스트")
+    parser.add_argument("--input-json", required=True, help="상담 INPUT_JSON 파일 경로")
+    parser.add_argument(
+        "--no-usage",
+        action="store_true",
+        help="메인 상담 응답 시간과 토큰 usage 출력을 숨김",
+    )
+    args = parser.parse_args()
+    run_cli_chat(args.input_json, show_usage=not args.no_usage)
+
+
+if __name__ == "__main__":
+    main()

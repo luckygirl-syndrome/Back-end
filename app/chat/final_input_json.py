@@ -175,7 +175,7 @@ style_match_percentage는 아래 기준으로 산정한다.
 12. **style_match_reasoning**: 1~2줄 설명. 단어 매칭이 아니라 product_style의 구체적인 디자인 요소가 회원 선호 스타일과 어떻게 맞거나 다른지 설명.
 
 ## 사이즈 정보
-13. **size_info** (array|null):
+13. **product_size** (array|null):
 - 이미지에 사이즈표 또는 사이즈별 실측 정보가 있을 때만 추출한다. 없으면 null.
 - 각 사이즈를 아래 형식의 객체로 저장한다.
 - `size`에는 사이즈명만 원문 그대로 저장한다. 예: S, M, L, FREE, 95, 100, 240, UNISEX.
@@ -184,22 +184,22 @@ style_match_percentage는 아래 기준으로 산정한다.
 - 확인되지 않는 값은 추측하지 않고 제외한다.
 
 예시:
-"size_info": [
-  {
+"product_size": [
+  {{
     "size": "M",
     "detail": "허리단면:33(밴딩), 엉덩이단면:56, 밑위길이:34, 밑단단면:31(최대), 허벅지단면:35, 총장:100.5, 단위:cm"
-  }
+  }}
 ]
 
 ## 소재 정보
-14. **material_info** (string|null):
+14. **product_material** (string|null):
 - 이미지에 소재·혼용률 정보가 명시된 경우에만 추출한다. 없으면 null.
 - 소재명과 비율을 화면 원문 그대로 하나의 문자열로 저장한다.
 - 여러 소재가 있으면 쉼표로 구분한다.
 - 소재감이나 품질은 추측하지 않는다.
 
 예시:
-"material_info": "폴리100"
+"product_material": "폴리100"
 
 ## 최종 JSON 출력 형식 (키 순서 고정, JSON만, 마크다운 코드블록 없이)
 
@@ -216,8 +216,8 @@ style_match_percentage는 아래 기준으로 산정한다.
   "product_style": null,
   "style_match_percentage": 0,
   "style_match_reasoning": null,
-  "size_info": null,
-  "material_info": null
+  "product_size": null,
+  "product_material": null
 }}"""
 
 # ─────────────────────────────────────────────
@@ -748,6 +748,8 @@ def build_product_info(
 def process_scenario(
     image_paths: List[Path],
     user_type: str,
+    user_height: Optional[float],
+    user_weight: Optional[float],
     style_tags: List[str],
     price_feeling: str,
     interest: str,
@@ -886,11 +888,14 @@ def process_scenario(
             product_style=result.get('product_style'),
         ),
         "confirmed_sentences": context_sentences,
-        "user_type": build_fbti_summary(user_type),
+        "user_size": {
+            "height": user_height,
+            "weight": user_weight,
+        },
         "review_count": result.get('review_count'),
         "review_score": result.get('review_score'),
-        "size_info": result.get('size_info'),
-        "material_info": result.get('material_info'),
+        "product_size": result.get('product_size'),
+        "product_material": result.get('product_material'),
     }
 
     # output.json 저장

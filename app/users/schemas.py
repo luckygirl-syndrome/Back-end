@@ -1,4 +1,4 @@
-from pydantic import BaseModel, EmailStr, field_validator
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from typing import Optional, List
 from enum import Enum
 
@@ -7,6 +7,8 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     nickname: str
+    height: float = Field(ge=50, le=250)
+    weight: float = Field(ge=20, le=300)
 
     @field_validator("password")
     @classmethod
@@ -27,6 +29,10 @@ class ProfileData(BaseModel):
     nickname: str
     profile_img: str
     fbti_name: str
+
+class HeightWeightUpdate(BaseModel):
+    height: float = Field(ge=50, le=250)
+    weight: float = Field(ge=20, le=300)
 
 class ProfileRead(BaseModel):
     profile_data: ProfileData

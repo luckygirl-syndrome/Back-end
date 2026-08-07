@@ -70,6 +70,8 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
         email=user.email,
         password=hash_password(user.password),
         nickname=user.nickname,
+        height=user.height,
+        weight=user.weight,
     )
     db.add(new_user)
     db.commit()
@@ -79,7 +81,13 @@ def signup(user: schemas.UserCreate, db: Session = Depends(get_db)):
         posthog_client.capture(distinct_id=str(new_user.user_id), event="user_signed_up",
                                properties={"provider": "email"})
         posthog_client.set(distinct_id=str(new_user.user_id), properties={"nickname": new_user.nickname})
-    return success({"userId": new_user.user_id, "email": new_user.email, "nickname": new_user.nickname})
+    return success({
+        "userId": new_user.user_id,
+        "email": new_user.email,
+        "nickname": new_user.nickname,
+        "height": new_user.height,
+        "weight": new_user.weight,
+    })
 
 
 @router.post("/auth/login", summary="이메일 로그인", responses=_200({"accessToken": "eyJ...", "tokenType": "bearer"}))

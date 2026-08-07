@@ -35,6 +35,8 @@ def get_my_profile(current_user: models.User = Depends(get_current_user)):
         "nickname": current_user.nickname,
         "profileImg": profile_img,
         "fbtiName": fbti_name,
+        "height": current_user.height,
+        "weight": current_user.weight,
     })
 
 

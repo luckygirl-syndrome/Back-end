@@ -28,7 +28,7 @@ _200 = lambda result: {"200": {"content": {"application/json": {"example": {"isS
         "discount_rate": 30,
         "product_info": ["상품명: Healing Off-Shoulder Tee", "가격: 65,000원 → 45,500원 (30% 할인)"],
         "confirmed_sentences": ["이 유저는 스트릿 스타일을 좋아합니다.", "충동 점수는 54점이고 일치하는 점수는 74점입니다."],
-        "user_type": {"code": "DIMO", "axis_summary": ["[확신 방식/I] ..."], "priority_rule": "..."},
+        "user_size": {"height": 165, "weight": 55},
         "impulse_score": 54,
         "match_score": 74,
         "product_img": "data:image/jpeg;base64,...",

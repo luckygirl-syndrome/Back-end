@@ -15,6 +15,8 @@ class User(Base):
     social_id = Column(String(255), nullable=True)
     fbti_type = Column(Text, nullable=True)
     profile_img = Column(String(255), default="0")
+    height = Column(Float, nullable=True)
+    weight = Column(Float, nullable=True)
 
     favorite_shops = Column(JSONB, nullable=True)
     style = Column(JSONB, nullable=True)

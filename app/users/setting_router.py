@@ -34,6 +34,18 @@ def update_nickname(data: schemas.NicknameUpdate, db: Session = Depends(get_db),
     return success({"nickname": current_user.nickname})
 
 
+@router.patch("/setting/height-weight", summary="키와 몸무게 수정", responses=_200({"height": 165, "weight": 55}))
+def update_height_weight(data: schemas.HeightWeightUpdate, db: Session = Depends(get_db), current_user: models.User = Depends(get_current_user)):
+    current_user.height = data.height
+    current_user.weight = data.weight
+    db.commit()
+    db.refresh(current_user)
+    return success({
+        "height": current_user.height,
+        "weight": current_user.weight,
+    })
+
+
 @router.post("/setting/social/link", summary="소셜 계정 연동", responses=_200(None))
 def link_social(body: schemas.SocialLinkRequest, current_user: models.User = Depends(get_current_user), db: Session = Depends(get_db)):
     already = db.query(models.UserSocialProvider).filter_by(

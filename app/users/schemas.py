@@ -31,8 +31,8 @@ class ProfileData(BaseModel):
     fbti_name: str
 
 class HeightWeightUpdate(BaseModel):
-    height: float = Field(ge=50, le=250)
-    weight: float = Field(ge=20, le=300)
+    height: Optional[float] = Field(default=None, ge=50, le=250)
+    weight: Optional[float] = Field(default=None, ge=20, le=300)
 
 class ProfileRead(BaseModel):
     profile_data: ProfileData

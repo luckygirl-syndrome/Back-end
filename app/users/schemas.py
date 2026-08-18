@@ -7,8 +7,8 @@ class UserCreate(BaseModel):
     email: EmailStr
     password: str
     nickname: str
-    height: float = Field(ge=50, le=250)
-    weight: float = Field(ge=20, le=300)
+    height: Optional[float] = Field(default=None, ge=50, le=250)
+    weight: Optional[float] = Field(default=None, ge=20, le=300)
 
     @field_validator("password")
     @classmethod
